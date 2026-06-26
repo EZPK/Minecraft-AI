@@ -53,7 +53,20 @@ export const combatTools: ToolFactory = ({ bot }) => [
         const { e } = candidate;
         if (candidate.d > 3) {
           const { x, y, z } = e.position;
-          await bot.pathfinder.goto(new goals.GoalNear(x, y, z, 2));
+          const gotoPromise = bot.pathfinder.goto(new goals.GoalNear(x, y, z, 2));
+          gotoPromise.catch(() => {});
+          let timeoutId: ReturnType<typeof setTimeout> | undefined;
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => {
+              bot.pathfinder.stop();
+              reject(new Error("approach timed out after 30s"));
+            }, 30_000);
+          });
+          try {
+            await Promise.race([gotoPromise, timeoutPromise]);
+          } finally {
+            clearTimeout(timeoutId);
+          }
         }
         await bot.lookAt(e.position.offset(0, e.height * 0.5, 0));
         bot.attack(e);

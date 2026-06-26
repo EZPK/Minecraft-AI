@@ -26,6 +26,7 @@ export async function guard(
     return textResult(await fn());
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error(`[tool-error] ${label}: ${message}`);
     return textResult(`${label} failed: ${message}`);
   }
 }

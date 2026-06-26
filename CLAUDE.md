@@ -57,15 +57,16 @@ Key files:
   discovery. OpenRouter/Ollama/LM Studio/OpenAI use the `openai-completions`
   API; Anthropic uses `anthropic-messages`.
 - `src/agent.ts` — builds the pi session via `createAgentSession`. The persona is
-  added with `DefaultResourceLoader({ appendSystemPrompt })` so pi's default
-  coding guidelines are **kept** (the agent needs them to author skills);
-  `noContextFiles: true` stops it loading this CLAUDE.md as agent context.
+  added with `DefaultResourceLoader({ appendSystemPrompt })`. Pi automatically
+  loads `AGENTS.md` (the agent's skill reference) over `CLAUDE.md`; no override
+  needed since pi checks `AGENTS.md` first.
 - `src/tools/` — primitive Minecraft tools, one file per domain, each a
   `ToolFactory` (`(ctx) => ToolDefinition[]`) aggregated in `tools/index.ts`.
 - `src/skills-runtime.ts` + `src/skill-api.ts` + `src/tools/skills.ts` — the
   Voyager layer. Agent-authored skills live in `skills/*.js` as ESM modules
   (`export default async (skills, args) => …`), hot-reloaded on every run via
-  cache-busted dynamic `import`.
+  cache-busted dynamic `import`. Pre-built skills (the generic ones) live there
+  too and are documented in `AGENTS.md`.
 
 ## Conventions that matter
 

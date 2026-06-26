@@ -10,3 +10,5 @@ nmp-cache/
 
 # agent-authored skills are kept; runtime scratch is not
 skills/.cache/
+
+.env

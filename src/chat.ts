@@ -16,14 +16,25 @@ export type MessageHandler = (msg: IncomingMessage) => void;
  * agent's words out (to in-game chat), chunked and rate-limited so the server
  * doesn't kick us.
  */
+interface QueueEntry {
+  text: string;
+  target: string | null;
+}
+
 export class ChatRouter {
-  private outQueue: string[] = [];
+  private outQueue: QueueEntry[] = [];
   private timer: NodeJS.Timeout | undefined;
+  private replyTarget: string | null = null;
 
   constructor(
     private readonly bot: Bot,
     private readonly selfUsername: string,
   ) {}
+
+  /** Set the player to direct responses to (via /tell). Pass null to broadcast. */
+  setReplyTarget(username: string | null): void {
+    this.replyTarget = username;
+  }
 
   /**
    * Decide which messages reach the agent. By default: every whisper, plus
@@ -50,11 +61,12 @@ export class ChatRouter {
 
   /** Queue text for output, split into chat-sized chunks. */
   say(text: string): void {
+    const target = this.replyTarget;
     for (const line of text.split("\n")) {
       const trimmed = line.trim();
       if (!trimmed) continue;
       for (const chunk of chunkText(trimmed, MAX_CHAT_LEN)) {
-        this.outQueue.push(chunk);
+        this.outQueue.push({ text: chunk, target });
       }
     }
     this.flushSoon();
@@ -63,13 +75,17 @@ export class ChatRouter {
   private flushSoon(): void {
     if (this.timer) return;
     const tick = () => {
-      const next = this.outQueue.shift();
-      if (next === undefined) {
+      const entry = this.outQueue.shift();
+      if (entry === undefined) {
         clearInterval(this.timer);
         this.timer = undefined;
         return;
       }
-      this.bot.chat(next);
+      if (entry.target) {
+        this.bot.chat(`/tell ${entry.target} ${entry.text}`);
+      } else {
+        this.bot.chat(entry.text);
+      }
     };
     // Send the first chunk immediately, then on an interval.
     tick();

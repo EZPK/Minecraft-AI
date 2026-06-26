@@ -56,6 +56,7 @@ export class SkillRuntime {
     await this.init();
     const path = this.pathFor(name);
     await writeFile(path, code, "utf8");
+    console.log(`[skill:save] ${name} → ${path}`);
     return path;
   }
 
@@ -78,9 +79,21 @@ export class SkillRuntime {
       );
     }
 
+    const argsStr = Object.keys(args).length ? ` ${JSON.stringify(args)}` : "";
+    console.log(`[skill:run] ${name}${argsStr}`);
     const api = new SkillApi(this.bot, this.chat);
     const result = await withTimeout(fn(api, args), timeoutMs, name);
-    return { result, logs: api.getLogs() };
+    const logs = api.getLogs();
+    console.log(`[skill:run] ${name} done — result: ${safeStringify(result)}`);
+    return { result, logs };
+  }
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return typeof value === "string" ? value : JSON.stringify(value);
+  } catch {
+    return String(value);
   }
 }
 

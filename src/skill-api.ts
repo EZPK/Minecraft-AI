@@ -20,6 +20,7 @@ export class SkillApi {
 
   /** Record a progress line, returned to the agent after the skill finishes. */
   log(message: string): void {
+    console.log(`[skill] ${message}`);
     this.logs.push(message);
   }
 
@@ -38,7 +39,7 @@ export class SkillApi {
 
   /** Walk to a coordinate. */
   async goto(x: number, y: number, z: number, range = 1): Promise<void> {
-    await this.bot.pathfinder.goto(new goals.GoalNear(x, y, z, range));
+    await this.gotoSafe(new goals.GoalNear(x, y, z, range));
   }
 
   /** Walk to a player by name. Throws if not visible. */
@@ -46,7 +47,64 @@ export class SkillApi {
     const target = this.bot.players[name]?.entity;
     if (!target) throw new Error(`Player "${name}" not visible`);
     const { x, y, z } = target.position;
-    await this.bot.pathfinder.goto(new goals.GoalNear(x, y, z, range));
+    await this.gotoSafe(new goals.GoalNear(x, y, z, range));
+  }
+
+  // bot.pathfinder.stop() schedules a PathStopped rejection on gotoPromise via
+  // setTimeout(0) inside goto.js. gotoPromise.catch(()=>{}) silences that
+  // delayed rejection so Node doesn't emit an unhandled rejection warning.
+  private async gotoSafe(
+    goal: Parameters<typeof this.bot.pathfinder.goto>[0],
+  ): Promise<void> {
+    const POLL_MS = 2_000;
+    const STUCK_LIMIT = 5; // 5 × 2s = 10s sans mouvement → coincé
+    const THRESHOLD = 0.5; // blocs minimum entre deux polls
+    const TIMEOUT_MS = 60_000;
+
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+    let timerId: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
+      clearInterval(intervalId);
+      clearTimeout(timerId);
+    };
+
+    const gotoPromise = this.bot.pathfinder.goto(goal);
+    gotoPromise.catch(() => {});
+
+    const stuckPromise = new Promise<never>((_, reject) => {
+      let lastPos = this.bot.entity.position.clone();
+      let stuckCount = 0;
+      intervalId = setInterval(() => {
+        const cur = this.bot.entity.position;
+        if (cur.distanceTo(lastPos) < THRESHOLD) {
+          if (++stuckCount >= STUCK_LIMIT)
+            reject(
+              new Error(
+                `Bot coincé: aucun mouvement depuis ${(STUCK_LIMIT * POLL_MS) / 1_000}s`,
+              ),
+            );
+        } else {
+          stuckCount = 0;
+          lastPos = cur.clone();
+        }
+      }, POLL_MS);
+    });
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timerId = setTimeout(
+        () => reject(new Error(`goto timeout après ${TIMEOUT_MS / 1_000}s`)),
+        TIMEOUT_MS,
+      );
+    });
+
+    try {
+      await Promise.race([gotoPromise, stuckPromise, timeoutPromise]);
+    } catch (err) {
+      this.bot.pathfinder.stop();
+      throw err;
+    } finally {
+      cleanup();
+    }
   }
 
   /** Coordinates of the nearest matching blocks. */

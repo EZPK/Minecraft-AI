@@ -38,6 +38,8 @@ export function createBot(cfg: MinecraftConfig): Promise<Bot> {
       const movements = new Movements(bot);
       movements.allowParkour = true;
       movements.canDig = true;
+      movements.allow1by1towers = true;
+      movements.canOpenDoors = true;
       bot.pathfinder.setMovements(movements);
       void mcData;
 

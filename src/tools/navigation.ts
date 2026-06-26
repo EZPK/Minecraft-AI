@@ -23,9 +23,22 @@ export const navigationTools: ToolFactory = ({ bot }) => [
     }),
     execute: (_id, p) =>
       guard("move_to", async () => {
-        await bot.pathfinder.goto(
+        const gotoPromise = bot.pathfinder.goto(
           new goals.GoalNear(p.x, p.y, p.z, p.range ?? 1),
         );
+        gotoPromise.catch(() => {});
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            bot.pathfinder.stop();
+            reject(new Error("move_to timed out after 30s"));
+          }, 30_000);
+        });
+        try {
+          await Promise.race([gotoPromise, timeoutPromise]);
+        } finally {
+          clearTimeout(timeoutId);
+        }
         const pos = bot.entity.position;
         return `Arrived near (${p.x}, ${p.y}, ${p.z}). Now at (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}).`;
       }),
@@ -46,7 +59,22 @@ export const navigationTools: ToolFactory = ({ bot }) => [
           return `Player "${p.player}" is not visible (not loaded near the bot).`;
         }
         const { x, y, z } = target.position;
-        await bot.pathfinder.goto(new goals.GoalNear(x, y, z, p.range ?? 2));
+        const gotoPromise = bot.pathfinder.goto(
+          new goals.GoalNear(x, y, z, p.range ?? 2),
+        );
+        gotoPromise.catch(() => {});
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            bot.pathfinder.stop();
+            reject(new Error("go_to_player timed out after 30s"));
+          }, 30_000);
+        });
+        try {
+          await Promise.race([gotoPromise, timeoutPromise]);
+        } finally {
+          clearTimeout(timeoutId);
+        }
         return `Reached ${p.player}.`;
       }),
   }),
@@ -68,6 +96,13 @@ export const navigationTools: ToolFactory = ({ bot }) => [
           new goals.GoalFollow(target, p.distance ?? 3),
           true,
         );
+        const onLeft = (player: { username: string }) => {
+          if (player.username === p.player) {
+            bot.pathfinder.setGoal(null);
+            bot.off("playerLeft", onLeft);
+          }
+        };
+        bot.on("playerLeft", onLeft);
         return `Now following ${p.player}.`;
       }),
   }),
