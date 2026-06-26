@@ -106,24 +106,63 @@ export class AgentBrain {
     if (!this.session) return;
     const { chat } = this.opts;
     const framed = `[${msg.whisper ? "whisper" : "chat"}] ${msg.sender}: ${msg.text}`;
+
+    // Mid-task: steer the in-flight turn instead of starting a new one. Crucially
+    // this branch does NOT touch `running` or the reply target — those belong to
+    // the active prompt turn. Clearing them here would let a later message fire a
+    // second concurrent prompt() and misroute the original turn's replies.
+    if (this.running) {
+      try {
+        await this.session.steer(framed);
+      } catch (err) {
+        console.error("[agent] steer failed:", err);
+      }
+      return;
+    }
+
+    this.running = true;
     chat.setReplyTarget(msg.sender);
     try {
-      if (this.running) {
-        // Mid-task: steer the in-flight turn instead of starting a new one.
-        await this.session.steer(framed);
-        return;
-      }
-      this.running = true;
-      await this.session.prompt(framed);
+      await this.withWatchdog(this.session.prompt(framed));
     } catch (err) {
       console.error("[agent] prompt failed:", err);
-      chat.say("Sorry, my brain hit an error.");
+      const stuck = err instanceof Error && err.message.includes("watchdog");
+      chat.say(
+        stuck
+          ? "I got stuck and reset myself — try again."
+          : "Sorry, my brain hit an error.",
+      );
     } finally {
       this.running = false;
       chat.setReplyTarget(null);
     }
   }
+
+  /**
+   * Race the agent turn against a hard timeout. If the LLM/network hangs, abort
+   * the pi session so `running` is released and the bot stays responsive instead
+   * of wedging forever. Unlike a plain timeout this actively cancels the turn.
+   */
+  private async withWatchdog<T>(work: Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout>;
+    const watchdog = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        console.error(
+          `[agent] watchdog fired after ${PROMPT_TIMEOUT_MS / 1000}s — aborting turn`,
+        );
+        void this.session?.abort();
+        reject(new Error("prompt watchdog timeout"));
+      }, PROMPT_TIMEOUT_MS);
+    });
+    try {
+      return await Promise.race([work, watchdog]);
+    } finally {
+      clearTimeout(timer!);
+    }
+  }
 }
+
+const PROMPT_TIMEOUT_MS = 180_000;
 
 function compact(v: unknown, max = 80): string {
   try {

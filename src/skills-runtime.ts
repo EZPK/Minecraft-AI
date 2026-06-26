@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import type { Bot } from "./bot.js";
 import type { ChatRouter } from "./chat.js";
 import { SkillApi, type Skill } from "./skill-api.js";
+import { withTimeout } from "./util.js";
 
 const SKILL_NAME_RE = /^[a-z][a-z0-9_]*$/;
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -37,7 +38,12 @@ export class SkillRuntime {
 
   async list(): Promise<SkillInfo[]> {
     if (!existsSync(this.dir)) return [];
-    const files = (await readdir(this.dir)).filter((f) => f.endsWith(".js"));
+    // Skip `_`-prefixed files (e.g. throwaway diagnostics) so they don't pollute
+    // the agent's view of its real capabilities. The `_archive/` subdir is also
+    // ignored since readdir is non-recursive.
+    const files = (await readdir(this.dir)).filter(
+      (f) => f.endsWith(".js") && !f.startsWith("_"),
+    );
     const infos: SkillInfo[] = [];
     for (const file of files) {
       const name = file.replace(/\.js$/, "");
@@ -82,10 +88,18 @@ export class SkillRuntime {
     const argsStr = Object.keys(args).length ? ` ${JSON.stringify(args)}` : "";
     console.log(`[skill:run] ${name}${argsStr}`);
     const api = new SkillApi(this.bot, this.chat);
-    const result = await withTimeout(fn(api, args), timeoutMs, name);
-    const logs = api.getLogs();
-    console.log(`[skill:run] ${name} done — result: ${safeStringify(result)}`);
-    return { result, logs };
+    try {
+      const result = await withTimeout(fn(api, args), timeoutMs, `Skill "${name}"`);
+      const logs = api.getLogs();
+      console.log(`[skill:run] ${name} done — result: ${safeStringify(result)}`);
+      return { result, logs };
+    } finally {
+      // A skill may time out or throw mid-action, leaving the bot in a dirty
+      // state (held control keys, an active pathfinder goal). Reset so the next
+      // command starts clean instead of the bot walking into a wall forever.
+      this.bot.clearControlStates();
+      this.bot.pathfinder.setGoal(null);
+    }
   }
 }
 
@@ -108,23 +122,4 @@ function firstDocLine(src: string): string {
   }
   const comment = src.match(/^\s*\/\/\s*(.+)$/m);
   return comment ? comment[1]!.trim() : "(no description)";
-}
-
-async function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  name: string,
-): Promise<T> {
-  let timer: NodeJS.Timeout;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`Skill "${name}" timed out after ${ms}ms`)),
-      ms,
-    );
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(timer!);
-  }
 }

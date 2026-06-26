@@ -24,24 +24,56 @@ export function createBot(cfg: MinecraftConfig): Promise<Bot> {
   bot.loadPlugin(collectBlock);
 
   return new Promise((resolve, reject) => {
-    const onError = (err: Error) => {
+    let settled = false;
+
+    const cleanup = () => {
+      clearTimeout(connectTimer);
       bot.removeListener("error", onError);
+      bot.removeListener("kicked", onKicked);
+      bot.removeListener("end", onEnd);
+    };
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      // Ensure the half-open connection is torn down so it can't leak.
+      try {
+        bot.end();
+      } catch {
+        /* already closed */
+      }
       reject(err);
     };
+
+    // If neither spawn nor a terminal event arrives (e.g. auth stalls), don't
+    // hang the reconnect loop forever — bail out and let it retry.
+    const connectTimer = setTimeout(
+      () => fail(new Error("connection timed out after 30s (no spawn)")),
+      30_000,
+    );
+
+    const onError = (err: Error) => fail(err);
+    const onKicked = (reason: string) =>
+      fail(new Error(`kicked before spawn: ${reason}`));
+    const onEnd = (reason: string) =>
+      fail(new Error(`disconnected before spawn: ${reason}`));
+
     bot.once("error", onError);
+    bot.once("kicked", onKicked);
+    bot.once("end", onEnd);
 
     bot.once("spawn", () => {
-      bot.removeListener("error", onError);
+      if (settled) return;
+      settled = true;
+      cleanup();
 
       // Default movement profile for pathfinder.
-      const mcData = bot.registry;
       const movements = new Movements(bot);
       movements.allowParkour = true;
       movements.canDig = true;
       movements.allow1by1towers = true;
       movements.canOpenDoors = true;
       bot.pathfinder.setMovements(movements);
-      void mcData;
 
       resolve(bot);
     });

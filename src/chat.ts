@@ -2,6 +2,7 @@ import type { Bot } from "./bot.js";
 
 const MAX_CHAT_LEN = 200; // Minecraft caps around 256; stay safe.
 const SEND_INTERVAL_MS = 1100; // Avoid spam-kick.
+const MAX_QUEUE = 30; // Bound the outbound queue; drop oldest beyond this.
 
 export interface IncomingMessage {
   sender: string;
@@ -69,7 +70,21 @@ export class ChatRouter {
         this.outQueue.push({ text: chunk, target });
       }
     }
+    // Keep only the most recent entries so a runaway turn can't grow the queue
+    // without bound (and never finish draining).
+    if (this.outQueue.length > MAX_QUEUE) {
+      this.outQueue.splice(0, this.outQueue.length - MAX_QUEUE);
+    }
     this.flushSoon();
+  }
+
+  /** Stop the flush timer and drop any pending output. Call on disconnect. */
+  dispose(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = undefined;
+    }
+    this.outQueue = [];
   }
 
   private flushSoon(): void {
@@ -81,10 +96,16 @@ export class ChatRouter {
         this.timer = undefined;
         return;
       }
-      if (entry.target) {
-        this.bot.chat(`/tell ${entry.target} ${entry.text}`);
-      } else {
-        this.bot.chat(entry.text);
+      try {
+        if (entry.target) {
+          this.bot.chat(`/tell ${entry.target} ${entry.text}`);
+        } else {
+          this.bot.chat(entry.text);
+        }
+      } catch (err) {
+        // Bot may have disconnected mid-flush; stop rather than throw uncaught.
+        console.error("[chat] send failed:", err);
+        this.dispose();
       }
     };
     // Send the first chunk immediately, then on an interval.

@@ -2,9 +2,10 @@
 export default async function (skills, args) {
   const { x, y, z } = args;
   const bot = skills.bot;
-  
+  const { Vec3 } = await import('vec3');
+
   // Look at the block
-  const block = bot.blockAt(new (require('vec3').Vec3)(x, y, z));
+  const block = bot.blockAt(new Vec3(x, y, z));
   if (!block) {
     skills.log(`No block at ${x}, ${y}, ${z}`);
     return false;

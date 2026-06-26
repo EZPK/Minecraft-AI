@@ -2,6 +2,10 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Vec3 } from "vec3";
 import { guard, type ToolFactory } from "./context.js";
+import { withTimeout } from "../util.js";
+
+const MINE_TIMEOUT_MS = 60_000;
+const PLACE_TIMEOUT_MS = 15_000;
 
 const FACES: Vec3[] = [
   new Vec3(0, 1, 0),
@@ -39,7 +43,15 @@ export const worldTools: ToolFactory = ({ bot }) => [
         const targets = positions
           .map((v) => bot.blockAt(v))
           .filter((b): b is NonNullable<typeof b> => b != null);
-        await bot.collectBlock.collect(targets);
+        try {
+          await withTimeout(
+            bot.collectBlock.collect(targets),
+            MINE_TIMEOUT_MS,
+            "mine",
+          );
+        } finally {
+          bot.pathfinder.setGoal(null);
+        }
         return `Mined ${targets.length} ${p.block}.`;
       }),
   }),
@@ -77,8 +89,12 @@ export const worldTools: ToolFactory = ({ bot }) => [
           return `Cannot place at (${p.x}, ${p.y}, ${p.z}): no adjacent solid block to place against.`;
         }
 
-        await bot.equip(item, "hand");
-        await bot.placeBlock(reference, face);
+        await withTimeout(bot.equip(item, "hand"), PLACE_TIMEOUT_MS, "equip");
+        await withTimeout(
+          bot.placeBlock(reference, face),
+          PLACE_TIMEOUT_MS,
+          "place_block",
+        );
         return `Placed ${p.block} at (${p.x}, ${p.y}, ${p.z}).`;
       }),
   }),

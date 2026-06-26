@@ -1,6 +1,9 @@
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { guard, type ToolFactory } from "./context.js";
+import { withTimeout } from "../util.js";
+
+const INV_TIMEOUT_MS = 15_000;
 
 export const inventoryTools: ToolFactory = ({ bot }) => [
   defineTool({
@@ -47,7 +50,11 @@ export const inventoryTools: ToolFactory = ({ bot }) => [
           const need = tableBlock ? "" : " (a crafting table may be required nearby)";
           return `No available recipe for "${p.item}" with current materials${need}.`;
         }
-        await bot.craft(recipes[0]!, p.count ?? 1, tableBlock ?? undefined);
+        await withTimeout(
+          bot.craft(recipes[0]!, p.count ?? 1, tableBlock ?? undefined),
+          INV_TIMEOUT_MS,
+          "craft",
+        );
         return `Crafted ${p.count ?? 1}x ${p.item}.`;
       }),
   }),
@@ -76,7 +83,11 @@ export const inventoryTools: ToolFactory = ({ bot }) => [
       guard("equip", async () => {
         const item = bot.inventory.items().find((i) => i.name === p.item);
         if (!item) return `No ${p.item} in inventory.`;
-        await bot.equip(item, p.destination ?? "hand");
+        await withTimeout(
+          bot.equip(item, p.destination ?? "hand"),
+          INV_TIMEOUT_MS,
+          "equip",
+        );
         return `Equipped ${p.item} to ${p.destination ?? "hand"}.`;
       }),
   }),
@@ -93,7 +104,11 @@ export const inventoryTools: ToolFactory = ({ bot }) => [
       guard("toss", async () => {
         const item = bot.inventory.items().find((i) => i.name === p.item);
         if (!item) return `No ${p.item} in inventory.`;
-        await bot.toss(item.type, null, p.count ?? item.count);
+        await withTimeout(
+          bot.toss(item.type, null, p.count ?? item.count),
+          INV_TIMEOUT_MS,
+          "toss",
+        );
         return `Tossed ${p.count ?? item.count}x ${p.item}.`;
       }),
   }),

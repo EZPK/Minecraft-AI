@@ -2,6 +2,7 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import pathfinderPkg from "mineflayer-pathfinder";
 import { guard, textResult, type ToolFactory } from "./context.js";
+import { navigateTo } from "../nav.js";
 
 const { goals } = pathfinderPkg;
 
@@ -23,22 +24,7 @@ export const navigationTools: ToolFactory = ({ bot }) => [
     }),
     execute: (_id, p) =>
       guard("move_to", async () => {
-        const gotoPromise = bot.pathfinder.goto(
-          new goals.GoalNear(p.x, p.y, p.z, p.range ?? 1),
-        );
-        gotoPromise.catch(() => {});
-        let timeoutId: ReturnType<typeof setTimeout> | undefined;
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => {
-            bot.pathfinder.stop();
-            reject(new Error("move_to timed out after 30s"));
-          }, 30_000);
-        });
-        try {
-          await Promise.race([gotoPromise, timeoutPromise]);
-        } finally {
-          clearTimeout(timeoutId);
-        }
+        await navigateTo(bot, new goals.GoalNear(p.x, p.y, p.z, p.range ?? 1));
         const pos = bot.entity.position;
         return `Arrived near (${p.x}, ${p.y}, ${p.z}). Now at (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}).`;
       }),
@@ -59,22 +45,7 @@ export const navigationTools: ToolFactory = ({ bot }) => [
           return `Player "${p.player}" is not visible (not loaded near the bot).`;
         }
         const { x, y, z } = target.position;
-        const gotoPromise = bot.pathfinder.goto(
-          new goals.GoalNear(x, y, z, p.range ?? 2),
-        );
-        gotoPromise.catch(() => {});
-        let timeoutId: ReturnType<typeof setTimeout> | undefined;
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => {
-            bot.pathfinder.stop();
-            reject(new Error("go_to_player timed out after 30s"));
-          }, 30_000);
-        });
-        try {
-          await Promise.race([gotoPromise, timeoutPromise]);
-        } finally {
-          clearTimeout(timeoutId);
-        }
+        await navigateTo(bot, new goals.GoalNear(x, y, z, p.range ?? 2));
         return `Reached ${p.player}.`;
       }),
   }),

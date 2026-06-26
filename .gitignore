@@ -12,3 +12,6 @@ nmp-cache/
 skills/.cache/
 
 .env
+
+# Runtime logs
+logs/

@@ -2,6 +2,8 @@ import { Vec3 } from "vec3";
 import pathfinderPkg from "mineflayer-pathfinder";
 import type { Bot } from "./bot.js";
 import type { ChatRouter } from "./chat.js";
+import { navigateTo } from "./nav.js";
+import { sleep } from "./util.js";
 
 const { goals } = pathfinderPkg;
 
@@ -34,7 +36,7 @@ export class SkillApi {
   }
 
   async wait(ms: number): Promise<void> {
-    await new Promise((r) => setTimeout(r, ms));
+    await sleep(ms);
   }
 
   /** Walk to a coordinate. */
@@ -50,61 +52,10 @@ export class SkillApi {
     await this.gotoSafe(new goals.GoalNear(x, y, z, range));
   }
 
-  // bot.pathfinder.stop() schedules a PathStopped rejection on gotoPromise via
-  // setTimeout(0) inside goto.js. gotoPromise.catch(()=>{}) silences that
-  // delayed rejection so Node doesn't emit an unhandled rejection warning.
   private async gotoSafe(
     goal: Parameters<typeof this.bot.pathfinder.goto>[0],
   ): Promise<void> {
-    const POLL_MS = 2_000;
-    const STUCK_LIMIT = 5; // 5 × 2s = 10s sans mouvement → coincé
-    const THRESHOLD = 0.5; // blocs minimum entre deux polls
-    const TIMEOUT_MS = 60_000;
-
-    let intervalId: ReturnType<typeof setInterval> | undefined;
-    let timerId: ReturnType<typeof setTimeout> | undefined;
-    const cleanup = () => {
-      clearInterval(intervalId);
-      clearTimeout(timerId);
-    };
-
-    const gotoPromise = this.bot.pathfinder.goto(goal);
-    gotoPromise.catch(() => {});
-
-    const stuckPromise = new Promise<never>((_, reject) => {
-      let lastPos = this.bot.entity.position.clone();
-      let stuckCount = 0;
-      intervalId = setInterval(() => {
-        const cur = this.bot.entity.position;
-        if (cur.distanceTo(lastPos) < THRESHOLD) {
-          if (++stuckCount >= STUCK_LIMIT)
-            reject(
-              new Error(
-                `Bot coincé: aucun mouvement depuis ${(STUCK_LIMIT * POLL_MS) / 1_000}s`,
-              ),
-            );
-        } else {
-          stuckCount = 0;
-          lastPos = cur.clone();
-        }
-      }, POLL_MS);
-    });
-
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timerId = setTimeout(
-        () => reject(new Error(`goto timeout après ${TIMEOUT_MS / 1_000}s`)),
-        TIMEOUT_MS,
-      );
-    });
-
-    try {
-      await Promise.race([gotoPromise, stuckPromise, timeoutPromise]);
-    } catch (err) {
-      this.bot.pathfinder.stop();
-      throw err;
-    } finally {
-      cleanup();
-    }
+    await navigateTo(this.bot, goal, { onLog: (m) => this.log(m) });
   }
 
   /** Coordinates of the nearest matching blocks. */

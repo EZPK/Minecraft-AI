@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { initFileLogging } from "./log.js";
 import { loadConfig, type AppConfig } from "./config.js";
 import { createBot } from "./bot.js";
 import { ChatRouter } from "./chat.js";
@@ -37,9 +38,15 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
       if (settled) return;
       settled = true;
       console.log(`[mindcraft-pi] ${label} — aborting brain…`);
+      chat.dispose();
       void brain.abort().finally(resolve);
     };
-    bot.on("error", (err) => console.error("[mindcraft-pi] bot error:", err));
+    bot.on("error", (err) => {
+      console.error("[mindcraft-pi] bot error:", err);
+      // An error not followed by an `end` would leave the bot alive-but-broken;
+      // tear the session down so the reconnect loop can recover.
+      shutdown("error");
+    });
     bot.on("kicked", (reason) => {
       console.error("[mindcraft-pi] kicked:", reason);
       shutdown("kicked");
@@ -51,20 +58,41 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
   });
 }
 
+const INITIAL_BACKOFF_MS = 5_000;
+const MAX_BACKOFF_MS = 60_000;
+// A session that lived at least this long is considered "healthy", so the next
+// reconnect starts from the initial backoff rather than a grown delay.
+const HEALTHY_SESSION_MS = 60_000;
+
 async function main(): Promise<void> {
   const cwd = process.cwd();
+  initFileLogging(cwd);
   const config = loadConfig();
 
-  let delay = 5_000;
+  // Last-resort safety net: a stray async throw outside the guarded paths must
+  // not silently kill the process and stop the bot.
+  process.on("unhandledRejection", (reason) => {
+    console.error("[mindcraft-pi] unhandled rejection:", reason);
+  });
+  process.on("uncaughtException", (err) => {
+    console.error("[mindcraft-pi] uncaught exception:", err);
+  });
+
+  let delay = INITIAL_BACKOFF_MS;
   while (true) {
+    const startedAt = Date.now();
     try {
       await runSession(config, cwd);
     } catch (err) {
       console.error("[mindcraft-pi] connection failed:", err);
     }
+    // Reset backoff after a healthy session; otherwise grow it.
+    if (Date.now() - startedAt >= HEALTHY_SESSION_MS) {
+      delay = INITIAL_BACKOFF_MS;
+    }
     console.log(`[mindcraft-pi] reconnecting in ${delay / 1000}s…`);
     await new Promise((r) => setTimeout(r, delay));
-    delay = Math.min(delay * 2, 60_000);
+    delay = Math.min(delay * 2, MAX_BACKOFF_MS);
   }
 }
 
