@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+*.log
+
+# pi session/auth caches & minecraft auth tokens
+.pi/
+.minecraft-auth/
+nmp-cache/
+
+# agent-authored skills are kept; runtime scratch is not
+skills/.cache/
