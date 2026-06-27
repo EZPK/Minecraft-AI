@@ -43,6 +43,17 @@ export const worldTools: ToolFactory = ({ bot }) => [
         const targets = positions
           .map((v) => bot.blockAt(v))
           .filter((b): b is NonNullable<typeof b> => b != null);
+
+        // Fail fast if nothing in the inventory can actually harvest this block
+        // (e.g. mining stone with no pickaxe just hand-digs for ages and drops
+        // nothing). Cheaper and clearer than letting it run into the timeout.
+        const sample = targets[0]!;
+        const canByHand = sample.canHarvest(null);
+        const tool = bot.inventory.items().find((i) => sample.canHarvest(i.type));
+        if (!canByHand && !tool) {
+          return `Can't harvest ${p.block} with what you have — it needs a proper tool (e.g. a pickaxe). Craft/equip one first.`;
+        }
+
         try {
           await withTimeout(
             bot.collectBlock.collect(targets),
@@ -50,6 +61,11 @@ export const worldTools: ToolFactory = ({ bot }) => [
             "mine",
           );
         } finally {
+          // Actually cancel the collection loop and clear the goal. withTimeout
+          // only rejects the wait — without this the orphaned collectBlock task
+          // keeps pathfinding in the background, and repeated mine calls stack
+          // them up until the process runs out of memory.
+          await bot.collectBlock.cancelTask().catch(() => {});
           bot.pathfinder.setGoal(null);
         }
         return `Mined ${targets.length} ${p.block}.`;

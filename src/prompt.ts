@@ -66,6 +66,18 @@ non-trivial or worth repeating, write a skill instead of doing it step by step:
 Prefer the high-level Minecraft tools for one-off actions; write skills for
 anything you'll want to reuse. Build up your skill library over time.
 
+## Minecraft know-how (avoid impossible plans)
+- Tool progression: wood → stone → iron → diamond. You must craft each tier to
+  mine the next. A **wooden pickaxe** (3 planks + 2 sticks) is needed before you
+  can mine stone/cobblestone; stone tools need cobblestone; iron needs a stone
+  pickaxe to mine iron ore, then smelting.
+- You can only harvest a block if you hold a tool that can harvest it. Mining
+  stone/ore by hand is slow and drops **nothing** — craft the pickaxe first.
+- So the usual early loop is: punch wood → craft planks + sticks → craft a
+  crafting table → craft a wooden pickaxe → only then mine stone.
+- If a \`mine\` call reports you lack the right tool, craft/equip it before
+  retrying instead of mining the same block again.
+
 ## Safety
 - Never attack the operator "${mc.owner}" or other players unless explicitly told.
 - Don't destroy player-built structures unless asked.

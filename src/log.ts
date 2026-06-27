@@ -24,16 +24,31 @@ export function initFileLogging(cwd: string): void {
   const file = join(dir, `session-${stamp}.log`);
   stream = createWriteStream(file, { flags: "a" });
 
+  // On slow filesystems (e.g. /mnt/* under WSL2) writes can drain slower than
+  // the app logs. Node's writable buffer is unbounded, so a backlog would grow
+  // in memory until OOM. Track backpressure and drop file writes while backed
+  // up — the console output is unaffected, we just skip mirroring to disk.
+  let backedUp = false;
+  stream.on("drain", () => {
+    backedUp = false;
+  });
+  stream.on("error", () => {
+    backedUp = true; // stop writing on any stream error
+  });
+
   const origLog = console.log.bind(console);
   const origErr = console.error.bind(console);
 
   const write = (level: string, args: unknown[]) => {
+    if (backedUp || !stream) return;
     const line = `${new Date().toISOString()} [${level}] ${args
       .map((a) =>
         typeof a === "string" ? a : a instanceof Error ? a.stack ?? a.message : safe(a),
       )
       .join(" ")}\n`;
-    stream?.write(stripAnsi(line));
+    // write() returns false when the internal buffer is over the high-water
+    // mark; pause mirroring until 'drain' rather than letting it balloon.
+    backedUp = !stream.write(stripAnsi(line));
   };
 
   console.log = (...args: unknown[]) => {

@@ -95,10 +95,13 @@ export class SkillRuntime {
       return { result, logs };
     } finally {
       // A skill may time out or throw mid-action, leaving the bot in a dirty
-      // state (held control keys, an active pathfinder goal). Reset so the next
-      // command starts clean instead of the bot walking into a wall forever.
+      // state (held control keys, an active pathfinder goal, a running
+      // collectBlock task). Reset so the next command starts clean instead of
+      // the bot walking into a wall forever — and so orphaned collectBlock
+      // loops don't pile up and exhaust memory.
       this.bot.clearControlStates();
       this.bot.pathfinder.setGoal(null);
+      await this.bot.collectBlock.cancelTask().catch(() => {});
     }
   }
 }
