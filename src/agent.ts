@@ -92,6 +92,18 @@ export class AgentBrain {
         case "compaction_start":
           console.log("[brain] compacting context…");
           break;
+        case "agent_end":
+          // The turn loop ended. willRetry=false + an idle bot means the model
+          // chose to stop — useful to see whether tasks finish or stall early.
+          console.log(
+            `[brain] turn ended (messages=${event.messages.length}, willRetry=${event.willRetry})`,
+          );
+          break;
+        case "queue_update":
+          console.log(
+            `[brain] queue: steering=${event.steering.length} followUp=${event.followUp.length}`,
+          );
+          break;
       }
     });
   }
@@ -112,6 +124,12 @@ export class AgentBrain {
     // the active prompt turn. Clearing them here would let a later message fire a
     // second concurrent prompt() and misroute the original turn's replies.
     if (this.running) {
+      // Steering only reaches the model if the agent is genuinely still
+      // streaming. If `running` is true but pi has gone idle, the message would
+      // vanish — surface that mismatch instead of silently dropping it.
+      console.log(
+        `[agent] steering into running turn (isStreaming=${this.session.isStreaming})`,
+      );
       try {
         await this.session.steer(framed);
       } catch (err) {
@@ -120,6 +138,7 @@ export class AgentBrain {
       return;
     }
 
+    console.log("[agent] new prompt turn");
     this.running = true;
     chat.setReplyTarget(msg.sender);
     try {
