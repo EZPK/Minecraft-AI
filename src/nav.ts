@@ -97,9 +97,13 @@ function gotoOnce(
 }
 
 async function manualUnstuck(bot: Bot): Promise<void> {
-  const controls = ["forward", "sprint", "jump"] as const;
+  // Deliberately no `sprint`: sprint+jump is the highest-speed vanilla movement
+  // and the pattern most likely to trip the server's movement validation
+  // (multiplayer.disconnect.invalid_player_movement). A plain forward hop is
+  // enough to clear most ledges/corners.
+  const controls = ["forward", "jump"] as const;
   for (const c of controls) bot.setControlState(c, true);
-  await sleep(1_200);
+  await sleep(800);
   for (const c of controls) bot.setControlState(c, false);
   await sleep(300);
 }
