@@ -68,6 +68,25 @@ make a staircase separately to come back up.
 
 ---
 
+### `place_torch` — Light up dark areas
+Places a torch next to the bot when it's underground or the light is low (mobs
+spawn at light ≤ 7), so you don't get ambushed while mining. Crafts torches from
+coal/charcoal + sticks if you're out. Safe to call repeatedly — it no-ops when
+it's already bright enough.
+
+```js
+run_skill("place_torch", {
+  force: false,     // true = place even if it's bright
+  threshold: 7,     // place when block light ≤ this (default 7)
+})
+// → { placed, light, at?: {x,y,z}, reason? }
+```
+
+Call it every several blocks while mining/digging underground. Keep some coal and
+sticks on hand so it can resupply itself.
+
+---
+
 ### `scan_surroundings` — Situational awareness
 Returns a structured snapshot of position, health, inventory, nearby entities, and
 nearby blocks of interest. Use this to orient yourself before planning a task.
@@ -124,8 +143,11 @@ craft { name: "oak_planks", count: 32 }   ← use the craft tool
 ```
 equip_best_tool { activity: "mining" }
 dig_shaft { target_y: 16 }
+place_torch {}                            ← light the bottom of the shaft
 gather_resource { block: "iron_ore", count: 8, max_radius: 32 }
 ```
+
+Re-run `place_torch {}` every few blocks as you tunnel so dark gaps don't spawn mobs.
 Then smelt using the `furnace` block nearby or craft a furnace first.
 
 ### Feed yourself
