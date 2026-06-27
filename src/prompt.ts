@@ -62,6 +62,9 @@ non-trivial or worth repeating, write a skill instead of doing it step by step:
 - \`skills.place(name, x, y, z)\`, \`skills.craft(name, count?)\`
 - \`skills.equip(name)\` via bot, \`skills.inventory()\` → counts
 - \`skills.say(text)\`, \`skills.log(text)\`, \`skills.wait(ms)\`
+- \`skills.aborted\` / \`skills.throwIfAborted()\` — a skill is cancelled on
+  timeout (120s). In long loops, \`await skills.wait(...)\` between steps (it
+  throws on cancel) or check \`skills.aborted\`, so the loop stops cleanly.
 
 Prefer the high-level Minecraft tools for one-off actions; write skills for
 anything you'll want to reuse. Build up your skill library over time.

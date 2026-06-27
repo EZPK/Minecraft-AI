@@ -18,7 +18,18 @@ export class SkillApi {
   constructor(
     readonly bot: Bot,
     private readonly chat: ChatRouter,
+    private readonly signal?: AbortSignal,
   ) {}
+
+  /** True once the skill has been cancelled (timeout/cleanup). */
+  get aborted(): boolean {
+    return this.signal?.aborted ?? false;
+  }
+
+  /** Throw if the skill has been cancelled — call inside tight loops. */
+  throwIfAborted(): void {
+    if (this.signal?.aborted) throw new Error("skill aborted");
+  }
 
   /** Record a progress line, returned to the agent after the skill finishes. */
   log(message: string): void {
@@ -35,8 +46,22 @@ export class SkillApi {
     this.chat.say(text);
   }
 
+  /** Sleep, but reject immediately if the skill is cancelled. Because looping
+   * skills await this between steps, an abort here naturally unwinds the loop. */
   async wait(ms: number): Promise<void> {
-    await sleep(ms);
+    this.throwIfAborted();
+    if (!this.signal) return sleep(ms);
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms);
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new Error("skill aborted"));
+      };
+      this.signal!.addEventListener("abort", onAbort, { once: true });
+    });
   }
 
   /** Walk to a coordinate. */

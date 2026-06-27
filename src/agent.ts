@@ -25,6 +25,8 @@ export class AgentBrain {
   private session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
   private running = false;
   private textBuffer = "";
+  /** Updated on every session event; the watchdog uses it to detect a hang. */
+  private lastActivity = Date.now();
 
   constructor(private readonly opts: AgentBrainOptions) {}
 
@@ -53,6 +55,9 @@ export class AgentBrain {
     this.session = session;
 
     session.subscribe((event) => {
+      // Any event means the turn is alive and making progress — keep the
+      // watchdog from firing on a legitimately long multi-step task.
+      this.lastActivity = Date.now();
       switch (event.type) {
         case "agent_start":
           console.log("[brain] thinking…");
@@ -158,30 +163,40 @@ export class AgentBrain {
   }
 
   /**
-   * Race the agent turn against a hard timeout. If the LLM/network hangs, abort
-   * the pi session so `running` is released and the bot stays responsive instead
-   * of wedging forever. Unlike a plain timeout this actively cancels the turn.
+   * Guard the turn against a *hang*, not against length. A productive multi-step
+   * task emits events constantly, so we abort only when no session event has
+   * fired for IDLE_TIMEOUT_MS (a genuinely stuck LLM/network call). The threshold
+   * is deliberately longer than any single tool/skill timeout so a slow-but-alive
+   * tool doesn't trip it.
    */
   private async withWatchdog<T>(work: Promise<T>): Promise<T> {
-    let timer: ReturnType<typeof setTimeout>;
+    this.lastActivity = Date.now();
+    let interval: ReturnType<typeof setInterval>;
     const watchdog = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        console.error(
-          `[agent] watchdog fired after ${PROMPT_TIMEOUT_MS / 1000}s — aborting turn`,
-        );
-        void this.session?.abort();
-        reject(new Error("prompt watchdog timeout"));
-      }, PROMPT_TIMEOUT_MS);
+      interval = setInterval(() => {
+        const idleMs = Date.now() - this.lastActivity;
+        if (idleMs >= IDLE_TIMEOUT_MS) {
+          console.error(
+            `[agent] watchdog: no activity for ${Math.round(idleMs / 1000)}s — aborting turn`,
+          );
+          void this.session?.abort();
+          reject(new Error("prompt watchdog timeout"));
+        }
+      }, WATCHDOG_POLL_MS);
     });
     try {
       return await Promise.race([work, watchdog]);
     } finally {
-      clearTimeout(timer!);
+      clearInterval(interval!);
     }
   }
 }
 
-const PROMPT_TIMEOUT_MS = 180_000;
+// Abort only after this long with zero session events. Must exceed the longest
+// single tool/skill timeout (skills: 120s) so a slow tool isn't mistaken for a
+// hang.
+const IDLE_TIMEOUT_MS = 180_000;
+const WATCHDOG_POLL_MS = 15_000;
 
 function compact(v: unknown, max = 80): string {
   try {

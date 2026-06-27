@@ -87,18 +87,27 @@ export class SkillRuntime {
 
     const argsStr = Object.keys(args).length ? ` ${JSON.stringify(args)}` : "";
     console.log(`[skill:run] ${name}${argsStr}`);
-    const api = new SkillApi(this.bot, this.chat);
+    // Cooperative cancellation: on timeout/cleanup we abort the signal so the
+    // skill's next `await skills.wait()` throws and its loop unwinds, instead of
+    // running on forever in the background after we've "timed out".
+    const controller = new AbortController();
+    const api = new SkillApi(this.bot, this.chat, controller.signal);
+    const skillPromise = fn(api, args);
+    // The orphaned loop may reject late (after abort) — swallow it so it doesn't
+    // surface as an unhandled rejection.
+    skillPromise.catch(() => {});
     try {
-      const result = await withTimeout(fn(api, args), timeoutMs, `Skill "${name}"`);
+      const result = await withTimeout(skillPromise, timeoutMs, `Skill "${name}"`);
       const logs = api.getLogs();
       console.log(`[skill:run] ${name} done — result: ${safeStringify(result)}`);
       return { result, logs };
     } finally {
       // A skill may time out or throw mid-action, leaving the bot in a dirty
       // state (held control keys, an active pathfinder goal, a running
-      // collectBlock task). Reset so the next command starts clean instead of
-      // the bot walking into a wall forever — and so orphaned collectBlock
+      // collectBlock task). Abort the skill and reset so the next command starts
+      // clean instead of the bot digging/walking on its own — and so orphaned
       // loops don't pile up and exhaust memory.
+      controller.abort();
       this.bot.clearControlStates();
       this.bot.pathfinder.setGoal(null);
       await this.bot.collectBlock.cancelTask().catch(() => {});
