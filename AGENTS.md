@@ -13,6 +13,11 @@ confirm what's on disk; the descriptions below explain *when* and *how* to use e
 | You need the result immediately in the same turn | The task loops or has error-recovery logic |
 | The action is simple enough to inline | The task is worth reusing later |
 
+> **Stuck on game knowledge?** If the `ask_minecraft_expert` tool is present, ask
+> it for recipes, the items/steps a goal needs, or survival tactics — then act
+> with your own tools and skills. (Only available when a local Minecraft model is
+> configured.)
+
 ---
 
 ## Pre-built skills

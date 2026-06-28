@@ -67,14 +67,38 @@ Key files:
   (`export default async (skills, args) => …`), hot-reloaded on every run via
   cache-busted dynamic `import`. Pre-built skills (the generic ones) live there
   too and are documented in `AGENTS.md`.
+- `src/telemetry.ts` — `BotTelemetry`: structured death/kick/low-health/path-failure
+  stream + counters. Used by the live runtime for visibility and by the eval
+  harness for abort signals and fitness penalties.
+- `src/eval/` — **headless evaluation**. `harness.ts` boots the bot like
+  `runSession` but injects a goal via `AgentBrain.handle` (the `onEvent` hook taps
+  session telemetry); `scenario.ts`/`scenarios.ts` define goals + fitness;
+  `fitness.ts` has the shared low-noise metrics (tech-tree deltas, competence
+  penalties); `runner.ts` runs N trials with variance; `run.ts` is the
+  `npm run eval` entry. Evaluation runs on the **live server** (no fixed seed), so
+  fitness favours deltas + competence over absolute yield, with an arena reset
+  (via `goto`, no `/tp`) and precondition gating between episodes.
+- `src/evolve/` — **reflection-driven evolution**. `reflect.ts` is the mutation
+  operator: a coding-only pi session that rewrites the worktree's skill library to
+  fix the weakest scenario. `loop.ts` baselines `main`, branches a git worktree,
+  mutates, gates on `node --check`, re-evaluates A/B, and merges to `main` only on
+  a margin-beating improvement. `run.ts` is the `npm run evolve` entry. The
+  evolved artifacts are cwd-isolated (`skills/`, `AGENTS.md`), so a worktree is
+  evaluated in-process by pointing the harness cwd at it — no node_modules copy.
 
 ## Conventions that matter
 
 - **ESM + NodeNext.** All local imports use `.js` extensions (even from `.ts`
   sources). `Type` comes from `typebox` (pinned to the version pi bundles).
-- **Tools never throw to the model.** Wrap tool bodies in `guard()` from
-  `src/tools/context.ts`; it converts errors into a readable tool result so the
-  agent can recover instead of the turn crashing.
+- **Tool failures must be honest.** Wrap tool bodies in `guard()` from
+  `src/tools/context.ts`. On failure it **throws** a labelled error; pi catches a
+  thrown tool error, turns it into an error tool result (message still visible to
+  the model) and sets `tool_execution_end.isError === true` — the turn does NOT
+  crash. This keeps `isError` truthful for the agent and the eval harness. Return
+  a normal string for soft, non-error outcomes ("no trees nearby"); only genuine
+  failures should throw. Tools should also **verify the world effect** before
+  reporting success (e.g. `mine` checks items were actually picked up, `move_to`
+  checks final distance) so a no-op doesn't read as a win.
 - **The SkillApi (`src/skill-api.ts`) is a contract.** Its shape is documented to
   the agent in `src/prompt.ts`, and saved skills depend on it. Add methods;
   don't rename or remove existing ones, or you break stored skills.

@@ -4,6 +4,7 @@ import {
   SessionManager,
   getAgentDir,
   type ToolDefinition,
+  type AgentSessionEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { AppConfig } from "./config.js";
 import type { ChatRouter, IncomingMessage } from "./chat.js";
@@ -15,6 +16,12 @@ export interface AgentBrainOptions {
   chat: ChatRouter;
   customTools: ToolDefinition[];
   cwd: string;
+  /**
+   * Optional sink for every raw session event. The eval harness uses this to
+   * count tool successes/errors (truthful `isError`), retries, and to capture
+   * the final assistant reply — without `session` needing to be made public.
+   */
+  onEvent?: (event: AgentSessionEvent) => void;
 }
 
 /**
@@ -53,6 +60,7 @@ export class AgentBrain {
     this.session = session;
 
     session.subscribe((event) => {
+      this.opts.onEvent?.(event);
       switch (event.type) {
         case "agent_start":
           console.log("[brain] thinking…");

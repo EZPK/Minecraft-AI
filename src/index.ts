@@ -5,6 +5,7 @@ import { ChatRouter } from "./chat.js";
 import { SkillRuntime } from "./skills-runtime.js";
 import { createMinecraftTools } from "./tools/index.js";
 import { AgentBrain } from "./agent.js";
+import { BotTelemetry } from "./telemetry.js";
 
 async function runSession(config: AppConfig, cwd: string): Promise<void> {
   console.log(
@@ -15,6 +16,8 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
   console.log(`[mindcraft-pi] spawned as "${selfName}".`);
 
   const chat = new ChatRouter(bot, selfName);
+  const telemetry = new BotTelemetry(bot);
+  telemetry.start();
   const skills = new SkillRuntime(join(cwd, "skills"), bot, chat);
   await skills.init();
 

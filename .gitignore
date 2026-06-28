@@ -1,7 +1,13 @@
 node_modules/
 dist/
 .env
+.env.*
+!.env.example
+!.env.eval.example
 *.log
+
+# evolution loop scratch (worktrees, run logs)
+.evolve/
 
 # pi session/auth caches & minecraft auth tokens
 .pi/
@@ -10,5 +16,3 @@ nmp-cache/
 
 # agent-authored skills are kept; runtime scratch is not
 skills/.cache/
-
-.env
