@@ -31,7 +31,25 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
   const memory = new FileMemory(cwd);
 
   const tools = createMinecraftTools({ bot, chat, skills, memory, isAlive });
-  const brain = new AgentBrain({ config, chat, customTools: tools, cwd, memory, resumeSession: true });
+
+  // Overlay bridge: routes narration and thinking state to HUD instead of chat.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const botHud = bot as any;
+  const hudNarrate = process.env.OVERLAY_PORT
+    ? (text: string) => { botHud.overlayAction = text; }
+    : undefined;
+  const hudThinking = process.env.OVERLAY_PORT
+    ? (active: boolean) => {
+        botHud.overlayThinking = active;
+        if (!active) botHud.overlayAction = "";
+      }
+    : undefined;
+
+  const brain = new AgentBrain({
+    config, chat, customTools: tools, cwd, memory, resumeSession: true,
+    onNarrate: hudNarrate,
+    onThinking: hudThinking,
+  });
 
   // OBS overlay HUD — activate by setting OVERLAY_PORT=8088 in .env
   if (process.env.OVERLAY_PORT) {

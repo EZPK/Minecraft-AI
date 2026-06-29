@@ -70,7 +70,10 @@ export function startOverlay(bot, { port = 8088 } = {}) {
 
   bot.once('end', () => {
     clearInterval(interval);
-    for (const res of clients) { try { res.end(); } catch {} }
+    // Push a disconnected state so the HUD switches to offline mode immediately
+    // instead of freezing on the last received values.
+    const offline = `data: ${JSON.stringify({ connected: false })}\n\n`;
+    for (const res of clients) { try { res.write(offline); res.end(); } catch {} }
     clients.clear();
     server.close();
   });
@@ -80,17 +83,14 @@ export function startOverlay(bot, { port = 8088 } = {}) {
 
 /**
  * Detect what the bot is currently doing, in priority order:
- * 1. bot.overlayAction — manual override (write any string, clear with '')
- * 2. bot.targetDigBlock — mineflayer native (set during bot.dig())
- * 3. bot.pvp?.target — mineflayer-pvp plugin
- * 4. bot.pathfinder?.goal — mineflayer-pathfinder
- * 5. bot.collectBlock?.task — mineflayer-collectblock
+ * 1. Mineflayer native signals — always accurate, never stale
+ * 2. bot.overlayAction — narration set by AgentBrain tool callbacks
+ * 3. bot.overlayThinking — LLM is between tool calls, processing
  *
- * @param {import('mineflayer').Bot & { overlayAction?: string }} bot
+ * @param {import('mineflayer').Bot & { overlayAction?: string; overlayThinking?: boolean }} bot
  * @returns {string}
  */
 function getAction(bot) {
-  if (bot.overlayAction) return bot.overlayAction;
   if (bot.targetDigBlock) {
     const name = bot.targetDigBlock.displayName ?? bot.targetDigBlock.name ?? 'bloc';
     return `⛏️ mine ${name}`;
@@ -101,6 +101,8 @@ function getAction(bot) {
   }
   if (bot.pathfinder?.goal) return `🚶 déplacement`;
   if (bot.collectBlock?.task) return `📦 collecte`;
+  if (bot.overlayAction) return bot.overlayAction;
+  if (bot.overlayThinking) return '🤔 réflexion…';
   return '';
 }
 

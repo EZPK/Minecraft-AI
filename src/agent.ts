@@ -23,6 +23,16 @@ export interface AgentBrainOptions {
   memory?: Memory;
   /** Optional hook for the eval harness — called on every session event. */
   onEvent?: (event: AgentSessionEvent) => void;
+  /**
+   * When provided, called with narration text instead of chat.narrate().
+   * Use to route action lines to an external HUD rather than in-game chat.
+   */
+  onNarrate?: (text: string) => void;
+  /**
+   * Called true when the LLM starts thinking, false when a tool fires or the
+   * turn ends. Lets an external HUD display a "réflexion…" indicator.
+   */
+  onThinking?: (active: boolean) => void;
 }
 
 /**
@@ -75,12 +85,17 @@ export class AgentBrain {
       switch (event.type) {
         case "agent_start":
           console.log("[brain] thinking…");
+          this.opts.onThinking?.(true);
           break;
         case "tool_execution_start":
           console.log(`[tool] ${event.toolName}(${compact(event.args)})`);
+          this.opts.onThinking?.(false);
           if (config.narrate) {
             const line = narrateAction(event.toolName, event.args);
-            if (line) chat.narrate(line);
+            if (line) {
+              if (this.opts.onNarrate) this.opts.onNarrate(line);
+              else chat.narrate(line);
+            }
           }
           break;
         case "tool_execution_end":
@@ -89,6 +104,8 @@ export class AgentBrain {
           } else {
             console.log(`[tool] ${event.toolName} → ok`);
           }
+          // Resume thinking indicator while the LLM processes the tool result.
+          this.opts.onThinking?.(true);
           break;
         case "message_update":
           if (event.assistantMessageEvent.type === "text_delta") {
@@ -97,7 +114,7 @@ export class AgentBrain {
             const thought = event.assistantMessageEvent.content.trim();
             if (thought) {
               console.log(`\x1b[2m🤔 ${thought}\x1b[0m`);
-              if (config.narrate) {
+              if (config.narrate && !this.opts.onNarrate) {
                 const summary = summarizeThought(thought);
                 if (summary) chat.narrate(`💭 ${summary}`);
               }
@@ -111,6 +128,7 @@ export class AgentBrain {
             chat.say(reply);
           }
           this.textBuffer = "";
+          this.opts.onThinking?.(false);
           break;
         }
         case "auto_retry_start":

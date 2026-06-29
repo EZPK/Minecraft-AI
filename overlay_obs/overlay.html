@@ -297,8 +297,18 @@
       };
 
       es.onmessage = (ev) => {
-        lastEvent = Date.now();
-        try { renderState(JSON.parse(ev.data)); } catch {}
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.connected === false) {
+            dot.className = 'dead';
+            es.close();
+            if (!demoInterval) startDemo();
+            setTimeout(connect, 3000);
+            return;
+          }
+          lastEvent = Date.now();
+          renderState(data);
+        } catch {}
       };
 
       es.onerror = () => {
