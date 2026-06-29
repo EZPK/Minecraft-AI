@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=480">
+<title>Bot HUD</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: transparent;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+    color: #fff;
+    width: 480px;
+    padding: 10px;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+
+  /* ── root panel ─────────────────────────────────────────────────────────── */
+  #hud {
+    background: rgba(0,0,0,0.62);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 5px;
+    padding: 8px 10px 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    backdrop-filter: blur(2px);
+  }
+
+  /* ── bars row ───────────────────────────────────────────────────────────── */
+  .bars {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .bar-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .bar-icon { font-size: 14px; line-height: 1; flex-shrink: 0; }
+
+  .bar-bg {
+    flex: 1;
+    height: 9px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+
+  #health-fill { background: #e05252; }
+  #food-fill   { background: #d08030; }
+
+  .bar-val {
+    width: 26px;
+    text-align: right;
+    font-size: 11px;
+    color: #ccc;
+    flex-shrink: 0;
+  }
+
+  /* ── middle row ─────────────────────────────────────────────────────────── */
+  .middle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 20px;
+  }
+
+  #held-item {
+    background: rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 3px;
+    padding: 1px 7px;
+    font-size: 11px;
+    color: #ffe28a;
+    white-space: nowrap;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+  }
+
+  #action {
+    font-size: 12px;
+    color: #c8e6c9;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+  #action.visible { opacity: 1; }
+
+  /* ── bottom row ─────────────────────────────────────────────────────────── */
+  .bottom {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    color: #aaa;
+  }
+
+  #coords { flex: 1; letter-spacing: 0.02em; }
+  #coords span { color: #ddd; }
+
+  #xp {
+    color: #a5d6a7;
+    white-space: nowrap;
+  }
+
+  /* ── status dot ─────────────────────────────────────────────────────────── */
+  #dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #555;
+    flex-shrink: 0;
+    transition: background 0.5s;
+  }
+  #dot.live { background: #66bb6a; }
+  #dot.dead { background: #ef5350; }
+
+  /* ── top-5 items strip ──────────────────────────────────────────────────── */
+  #items-strip {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    min-height: 16px;
+  }
+
+  .item-badge {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 3px;
+    padding: 0 5px;
+    font-size: 10px;
+    color: #ccc;
+    white-space: nowrap;
+  }
+  .item-badge b { color: #fff; }
+</style>
+</head>
+<body>
+<div id="hud">
+
+  <!-- bars -->
+  <div class="bars">
+    <div class="bar-wrap">
+      <span class="bar-icon">❤️</span>
+      <div class="bar-bg"><div class="bar-fill" id="health-fill" style="width:100%"></div></div>
+      <span class="bar-val" id="health-val">20</span>
+    </div>
+    <div class="bar-wrap">
+      <span class="bar-icon">🍗</span>
+      <div class="bar-bg"><div class="bar-fill" id="food-fill" style="width:100%"></div></div>
+      <span class="bar-val" id="food-val">20</span>
+    </div>
+  </div>
+
+  <!-- held item + action -->
+  <div class="middle">
+    <span id="held-item">—</span>
+    <span id="action"></span>
+  </div>
+
+  <!-- coords + xp + status dot -->
+  <div class="bottom">
+    <span id="coords">x <span>—</span> &nbsp;y <span>—</span> &nbsp;z <span>—</span></span>
+    <span id="xp">✨ lv. —</span>
+    <span id="dot"></span>
+  </div>
+
+  <!-- top-5 inventory -->
+  <div id="items-strip"></div>
+
+</div>
+
+<script>
+(function () {
+  // ── element refs ───────────────────────────────────────────────────────────
+  const healthFill = document.getElementById('health-fill');
+  const healthVal  = document.getElementById('health-val');
+  const foodFill   = document.getElementById('food-fill');
+  const foodVal    = document.getElementById('food-val');
+  const heldItem   = document.getElementById('held-item');
+  const action     = document.getElementById('action');
+  const coords     = document.getElementById('coords');
+  const xpEl       = document.getElementById('xp');
+  const dot        = document.getElementById('dot');
+  const strip      = document.getElementById('items-strip');
+
+  // ── helpers ────────────────────────────────────────────────────────────────
+
+  function pct(val, max) { return Math.min(100, Math.max(0, (val / max) * 100)).toFixed(1) + '%'; }
+
+  function setBar(fill, valEl, val, max) {
+    fill.style.width = pct(val, max);
+    valEl.textContent = Math.round(val);
+    // Colour shifts: green → yellow → red
+    const ratio = val / max;
+    if (ratio > 0.5)      fill.style.background = (fill === healthFill) ? '#e05252' : '#d08030';
+    else if (ratio > 0.25) fill.style.background = '#e0c040';
+    else                   fill.style.background = '#e05252';
+  }
+
+  function fmtName(name) {
+    if (!name) return '—';
+    return name.replace(/_/g, ' ');
+  }
+
+  function renderState(s) {
+    setBar(healthFill, healthVal, s.health, 20);
+    setBar(foodFill,   foodVal,   s.food,   20);
+
+    heldItem.textContent = s.heldItem ? fmtName(s.heldItem) : '—';
+
+    if (s.action) {
+      action.textContent = s.action;
+      action.classList.add('visible');
+    } else {
+      action.classList.remove('visible');
+    }
+
+    if (s.pos) {
+      const { x, y, z } = s.pos;
+      coords.innerHTML =
+        `x <span>${x}</span> &nbsp;y <span>${y}</span> &nbsp;z <span>${z}</span>`;
+    }
+
+    xpEl.textContent = `✨ lv. ${s.xp}`;
+
+    // Inventory strip
+    strip.innerHTML = '';
+    for (const { name, count } of (s.topItems ?? [])) {
+      const b = document.createElement('span');
+      b.className = 'item-badge';
+      b.innerHTML = `${fmtName(name)} <b>${count}</b>`;
+      strip.appendChild(b);
+    }
+  }
+
+  // ── demo mode (offline preview) ────────────────────────────────────────────
+
+  let lastEvent = 0;
+  let demoInterval = null;
+  let t = 0;
+
+  function startDemo() {
+    if (demoInterval) return;
+    dot.className = 'dead';
+    demoInterval = setInterval(() => {
+      t += 0.05;
+      renderState({
+        health: 10 + 10 * Math.abs(Math.sin(t * 0.3)),
+        food:   14 + 6  * Math.abs(Math.sin(t * 0.17)),
+        xp:     Math.floor(t / 2) % 20,
+        heldItem: ['wooden_pickaxe', 'iron_axe', null, 'oak_log'][Math.floor(t / 3) % 4],
+        action: ['⛏️ mine stone', '🚶 déplacement', '', '📦 collecte'][Math.floor(t / 5) % 4],
+        pos: { x: Math.round(100 + 20 * Math.sin(t * 0.1)), y: 64, z: Math.round(-50 + 20 * Math.cos(t * 0.1)) },
+        topItems: [
+          { name: 'oak_log', count: 7 },
+          { name: 'cobblestone', count: 12 },
+          { name: 'coal', count: 4 },
+        ],
+      });
+    }, 150);
+  }
+
+  function stopDemo() {
+    if (!demoInterval) return;
+    clearInterval(demoInterval);
+    demoInterval = null;
+  }
+
+  // ── SSE connection ─────────────────────────────────────────────────────────
+
+  function connect() {
+    // Try SSE first (requires bot-overlay server to be running)
+    try {
+      const es = new EventSource('/events');
+
+      es.onopen = () => {
+        dot.className = 'live';
+        stopDemo();
+      };
+
+      es.onmessage = (ev) => {
+        lastEvent = Date.now();
+        try { renderState(JSON.parse(ev.data)); } catch {}
+      };
+
+      es.onerror = () => {
+        dot.className = 'dead';
+        es.close();
+        if (!demoInterval) startDemo();
+        setTimeout(connect, 3000);
+      };
+    } catch {
+      startDemo();
+      setTimeout(connect, 3000);
+    }
+
+    // Stale-event watchdog: if no SSE events for 5 s, show offline
+    setInterval(() => {
+      if (lastEvent && Date.now() - lastEvent > 5000) {
+        dot.className = 'dead';
+        if (!demoInterval) startDemo();
+        lastEvent = 0;
+      }
+    }, 2000);
+  }
+
+  // ── boot ───────────────────────────────────────────────────────────────────
+
+  // Start demo immediately so the overlay isn't blank while connecting
+  startDemo();
+
+  // Small delay before attempting SSE to let the browser render first
+  setTimeout(connect, 400);
+})();
+</script>
+</body>
+</html>

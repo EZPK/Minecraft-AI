@@ -31,6 +31,18 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
 
   const tools = createMinecraftTools({ bot, chat, skills, memory, isAlive });
   const brain = new AgentBrain({ config, chat, customTools: tools, cwd, memory, resumeSession: true });
+
+  // OBS overlay HUD — activate by setting OVERLAY_PORT=8088 in .env
+  if (process.env.OVERLAY_PORT) {
+    const overlayPort = Number(process.env.OVERLAY_PORT);
+    import(
+      /* webpackIgnore: true */
+      new URL("../overlay_obs/bot-overlay.mjs", import.meta.url).href
+    )
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .then((m: any) => (m.startOverlay as (b: unknown, o: { port: number }) => void)(bot, { port: overlayPort }))
+      .catch((err: unknown) => console.warn("[overlay] failed to start:", err));
+  }
   await brain.start();
 
   chat.onPlayerMessage((msg) => {
