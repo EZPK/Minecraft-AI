@@ -26,7 +26,7 @@ export default async function (skills, args) {
 
   // Blocks of interest — scan a curated list so we don't spam findBlocks for everything
   const INTERESTING = [
-    'diamond_ore', 'deep_slate_diamond_ore',
+    'diamond_ore', 'deepslate_diamond_ore',
     'iron_ore', 'deepslate_iron_ore',
     'gold_ore', 'deepslate_gold_ore',
     'coal_ore', 'deepslate_coal_ore',

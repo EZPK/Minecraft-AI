@@ -96,6 +96,15 @@ export class ChatRouter {
     this.flushSoon();
   }
 
+  /** Stop the outgoing queue and clear the send timer. Call on disconnect. */
+  destroy(): void {
+    this.outQueue = [];
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = undefined;
+    }
+  }
+
   private flushSoon(): void {
     if (this.timer) return;
     const tick = () => {

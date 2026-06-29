@@ -49,6 +49,7 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
       // Mark dead and stop movement first: tools/skills now fail fast instead of
       // acting on a disconnected bot.
       alive = false;
+      chat.destroy();
       try {
         bot.pathfinder?.setGoal(null);
       } catch {
@@ -84,13 +85,17 @@ async function main(): Promise<void> {
   const cwd = process.cwd();
   const config = loadConfig();
 
+  const STABLE_SESSION_MS = 30_000; // reset backoff if a session lasted this long
   let delay = 5_000;
   while (true) {
+    const start = Date.now();
     try {
       await runSession(config, cwd);
     } catch (err) {
       console.error("[mindcraft-pi] connection failed:", err);
     }
+    // Reset backoff after a session that ran long enough to be "healthy".
+    if (Date.now() - start >= STABLE_SESSION_MS) delay = 5_000;
     console.log(`[mindcraft-pi] reconnecting in ${delay / 1000}s…`);
     await new Promise((r) => setTimeout(r, delay));
     delay = Math.min(delay * 2, 60_000);

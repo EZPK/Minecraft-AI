@@ -1,4 +1,4 @@
-import { readFile, writeFile, readdir, mkdir } from "node:fs/promises";
+import { readFile, writeFile, readdir, mkdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -21,6 +21,9 @@ export interface SkillInfo {
  * edit a skill and immediately re-run it.
  */
 export class SkillRuntime {
+  /** mtime-keyed cache: one ESM entry per skill version, not per execution. */
+  private readonly moduleCache = new Map<string, { mtime: number; fn: Skill }>();
+
   constructor(
     private readonly dir: string,
     private readonly bot: Bot,
@@ -70,14 +73,25 @@ export class SkillRuntime {
     if (!existsSync(path)) {
       throw new Error(`Skill "${name}" does not exist. Save it first.`);
     }
-    // Cache-bust so edits take effect without restarting the process.
-    const url = `${pathToFileURL(path).href}?v=${Date.now()}`;
-    const mod = (await import(url)) as { default?: Skill };
-    const fn = mod.default;
-    if (typeof fn !== "function") {
-      throw new Error(
-        `Skill "${name}" must export a default async function (skills, args).`,
-      );
+    // Reload only when the file has actually changed (mtime-based cache).
+    // A timestamp cache-bust on every call would permanently add one ESM entry
+    // per execution to Node's module registry — it can't be evicted and causes
+    // unbounded heap growth in eval/evolve runs.
+    const { mtimeMs } = await stat(path);
+    const cached = this.moduleCache.get(path);
+    let fn: Skill;
+    if (cached && cached.mtime === mtimeMs) {
+      fn = cached.fn;
+    } else {
+      const url = `${pathToFileURL(path).href}?v=${Date.now()}`;
+      const mod = (await import(url)) as { default?: Skill };
+      fn = mod.default as Skill;
+      if (typeof fn !== "function") {
+        throw new Error(
+          `Skill "${name}" must export a default async function (skills, args).`,
+        );
+      }
+      this.moduleCache.set(path, { mtime: mtimeMs, fn });
     }
 
     const argsStr = Object.keys(args).length ? ` ${JSON.stringify(args)}` : "";
