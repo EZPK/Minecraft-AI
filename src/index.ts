@@ -72,9 +72,15 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
       /* pathfinder may not be loaded / already torn down */
     }
     console.log(`[mindcraft-pi] ${label} — aborting brain…`);
-    // Hard deadline: brain.abort() has its own 8 s internal timeout; this
-    // fallback covers checkpoint I/O hangs and any other unexpected stall.
-    const fallback = setTimeout(resolveSession, 15_000);
+
+    // Abort the brain NOW — don't wait for checkpoint. This stops the LLM from
+    // firing more tool calls on a dead bot. (brain.abort() has its own 8 s
+    // internal timeout so it can't block forever.)
+    void brain.abort().catch(() => {});
+
+    // Checkpoint in parallel; resolve the session once it's done.
+    // Hard fallback: if checkpoint hangs, unblock reconnect after 10 s.
+    const fallback = setTimeout(resolveSession, 10_000);
     const pos = bot.entity?.position;
     void memory
       .checkpoint({
@@ -84,8 +90,6 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
         pathFailures: telemetry.counters.pathFailures,
       })
       .catch((err) => console.error("[mindcraft-pi] checkpoint failed:", err))
-      .then(() => brain.abort())
-      .catch(() => { /* abort error must not suppress reconnect */ })
       .finally(() => {
         clearTimeout(fallback);
         resolveSession();
