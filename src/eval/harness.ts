@@ -65,8 +65,9 @@ export class EvalHarness {
     const tools = createMinecraftTools({ bot: this.bot, chat: this.chat, skills, memory });
 
     this.brain = new AgentBrain({
-      // Headless eval shares the live server; never broadcast thoughts there.
-      config: { ...this.config, narrate: false },
+      // Narration follows BOT_NARRATE (same as live) so eval/evolve runs can be
+      // streamed too.
+      config: this.config,
       chat: this.chat,
       customTools: tools,
       cwd: this.cwd,
