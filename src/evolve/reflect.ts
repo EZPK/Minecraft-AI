@@ -91,17 +91,44 @@ function buildReflectionPrompt(worst: ScenarioSummary): string {
   const components = Object.entries(worst.sampleComponents)
     .map(([k, v]) => `${k}=${v}`)
     .join(", ");
+  const delta = Object.entries(worst.sampleInventoryDelta ?? {})
+    .sort(([, a], [, b]) => Math.abs(b) - Math.abs(a))
+    .map(([k, v]) => `${k}: ${v > 0 ? "+" : ""}${v}`)
+    .join(", ");
+
+  // Detect "claimed success but didn't deliver" — goal bonus is 0 despite a run
+  const goalBonus = worst.sampleComponents["goal"] ?? worst.sampleComponents["allDone"] ?? null;
+  const fakeClaim = goalBonus === 0 && worst.mean < 5;
+
   return `
 The agent's weakest evaluation scenario is **${worst.scenarioId}**.
 
-- Goal given to the agent: "${goal}"
-- Mean fitness: ${worst.mean} (±${worst.stdDev}) over ${worst.scores.length} scored trial(s)
-- Last score breakdown: ${components || "(none)"}
-- Avg tool errors/episode: ${worst.avgToolErrors}; avg deaths: ${worst.avgDeaths}; timeouts: ${worst.timeouts}
+## Goal given to the agent
+\`\`\`
+${goal}
+\`\`\`
 
-Diagnose the most likely reason the agent underperforms at this goal, then make
-ONE concrete improvement to the skill library (and AGENTS.md) so it does better
-next time. Inspect the current skills before writing. When done, briefly state
-what you changed and why.
+## Measured results (last scored trial)
+- Fitness score: ${worst.mean} ± ${worst.stdDev} (${worst.scores.length} trial(s))
+- Score breakdown: ${components || "(none)"}
+- **Actual inventory delta** (what really changed): ${delta || "(nothing changed)"}
+- Tool errors: ${worst.avgToolErrors}/episode | Deaths: ${worst.avgDeaths}/episode | Timeouts: ${worst.timeouts}
+${fakeClaim ? `
+⚠️  IMPORTANT: The goal bonus is 0, meaning the agent DID NOT complete the task.
+The inventory delta above shows what actually happened. The agent likely stopped
+early or claimed success without finishing. The skill it used probably has a bug
+or exits too soon.
+` : ""}
+## What to do
+1. Read the existing skills (list_skills or ls skills/) before writing anything.
+2. Identify the SPECIFIC step that failed based on the inventory delta above.
+   - If nothing changed: the agent couldn't even start (pathfinding? wrong tool?)
+   - If partial progress: find where the skill exits early or throws incorrectly
+   - If goal bonus = 0 despite activity: the terminal condition wasn't reached
+3. Make ONE focused fix: edit or write the skill that handles the failing step.
+4. Update AGENTS.md if you add or rename a skill.
+5. Do NOT invent SkillApi methods — read skills/scan_surroundings.js for the real API.
+
+When done, state clearly: what failed, what you changed, and what the fix does.
 `.trim();
 }

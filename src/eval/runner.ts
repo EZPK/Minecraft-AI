@@ -17,6 +17,12 @@ export interface ScenarioSummary {
   timeouts: number;
   /** Fitness component breakdown from the last scored trial, for explainability. */
   sampleComponents: Record<string, number>;
+  /**
+   * Non-zero inventory changes from the last scored trial.
+   * Positive = gained, negative = consumed. Lets the reflect agent see exactly
+   * what was (or was not) accomplished regardless of what the bot claimed.
+   */
+  sampleInventoryDelta: Record<string, number>;
 }
 
 function readArena(): Arena {
@@ -69,7 +75,22 @@ function summarize(scenarioId: string, runs: ScenarioRun[]): ScenarioSummary {
     avgDeaths: avg((r) => r.telemetry.deaths),
     timeouts: scored.filter((r) => r.telemetry.timedOut).length,
     sampleComponents: scored.at(-1)?.fitness.components ?? {},
+    sampleInventoryDelta: inventoryDelta(scored.at(-1)),
   };
+}
+
+function inventoryDelta(run: ScenarioRun | undefined): Record<string, number> {
+  if (!run) return {};
+  const delta: Record<string, number> = {};
+  const allKeys = new Set([
+    ...Object.keys(run.before.inventory),
+    ...Object.keys(run.after.inventory),
+  ]);
+  for (const k of allKeys) {
+    const d = (run.after.inventory[k] ?? 0) - (run.before.inventory[k] ?? 0);
+    if (d !== 0) delta[k] = d;
+  }
+  return delta;
 }
 
 export interface RunEvalOptions {
