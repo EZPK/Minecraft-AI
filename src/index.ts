@@ -4,6 +4,7 @@ import { loadConfig, type AppConfig } from "./config.js";
 import { createBot } from "./bot.js";
 import { ChatRouter } from "./chat.js";
 import { SkillRuntime } from "./skills-runtime.js";
+import { FileMemory } from "./memory.js";
 import { createMinecraftTools } from "./tools/index.js";
 import { AgentBrain } from "./agent.js";
 
@@ -19,8 +20,9 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
   const skills = new SkillRuntime(join(cwd, "skills"), bot, chat);
   await skills.init();
 
-  const tools = createMinecraftTools({ bot, chat, skills });
-  const brain = new AgentBrain({ config, chat, customTools: tools, cwd });
+  const memory = new FileMemory(cwd);
+  const tools = createMinecraftTools({ bot, chat, skills, memory });
+  const brain = new AgentBrain({ config, chat, customTools: tools, cwd, memory });
   await brain.start();
 
   chat.onPlayerMessage((msg) => {
@@ -39,7 +41,15 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
       settled = true;
       console.log(`[mindcraft-pi] ${label} — aborting brain…`);
       chat.dispose();
-      void brain.abort().finally(resolve);
+      const checkpointAndAbort = async () => {
+        if (brain.lastObjective) {
+          await memory
+            .checkpoint({ objective: brain.lastObjective })
+            .catch(() => {});
+        }
+        await brain.abort();
+      };
+      void checkpointAndAbort().finally(resolve);
     };
     bot.on("error", (err) => {
       console.error("[mindcraft-pi] bot error:", err);

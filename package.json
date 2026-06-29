@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "eval": "tsx src/eval/run.ts",
+    "evolve": "tsx src/evolve/run.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

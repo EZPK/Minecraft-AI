@@ -18,6 +18,13 @@ export function createBot(cfg: MinecraftConfig): Promise<Bot> {
     version: cfg.version,
     username: cfg.username,
     auth: cfg.auth,
+    // 1.21.5+ introduced a per-message checksum in the signed-chat protocol that
+    // minecraft-protocol doesn't compute correctly for all server configurations,
+    // causing chat_validation_failed kicks. Disabling signing sends unsigned
+    // messages instead; the server accepts them when enforce-secure-profile=false
+    // (the default for most servers). If the server enforces it, the connection
+    // will throw at login time rather than getting kicked mid-session.
+    disableChatSigning: true,
   });
 
   bot.loadPlugin(pathfinder);

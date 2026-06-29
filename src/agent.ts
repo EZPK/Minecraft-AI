@@ -4,9 +4,11 @@ import {
   SessionManager,
   getAgentDir,
   type ToolDefinition,
+  type AgentSessionEvent,
 } from "@earendil-works/pi-coding-agent";
 import type { AppConfig } from "./config.js";
 import type { ChatRouter, IncomingMessage } from "./chat.js";
+import type { Memory } from "./memory.js";
 import { buildModel } from "./model.js";
 import { buildPersona } from "./prompt.js";
 
@@ -15,6 +17,12 @@ export interface AgentBrainOptions {
   chat: ChatRouter;
   customTools: ToolDefinition[];
   cwd: string;
+  /** When false, use an in-memory session (eval/evolve harness, reproducibility). */
+  resumeSession?: boolean;
+  /** Memory backend — stored here so callers can access it for shutdown checkpoints. */
+  memory?: Memory;
+  /** Optional hook for the eval harness — called on every session event. */
+  onEvent?: (event: AgentSessionEvent) => void;
 }
 
 /**
@@ -27,6 +35,8 @@ export class AgentBrain {
   private textBuffer = "";
   /** Updated on every session event; the watchdog uses it to detect a hang. */
   private lastActivity = Date.now();
+  /** The latest player goal — kept for checkpoint or eval harness. */
+  lastObjective: string | undefined;
 
   constructor(private readonly opts: AgentBrainOptions) {}
 
@@ -50,7 +60,10 @@ export class AgentBrain {
       thinkingLevel: config.model.thinkingLevel as never,
       customTools,
       resourceLoader: loader,
-      sessionManager: SessionManager.create(cwd),
+      sessionManager:
+        this.opts.resumeSession === false
+          ? SessionManager.inMemory(cwd)
+          : SessionManager.create(cwd),
     });
     this.session = session;
 
@@ -58,6 +71,7 @@ export class AgentBrain {
       // Any event means the turn is alive and making progress — keep the
       // watchdog from firing on a legitimately long multi-step task.
       this.lastActivity = Date.now();
+      this.opts.onEvent?.(event as AgentSessionEvent);
       switch (event.type) {
         case "agent_start":
           console.log("[brain] thinking…");
@@ -144,6 +158,7 @@ export class AgentBrain {
     }
 
     console.log("[agent] new prompt turn");
+    this.lastObjective = `${msg.sender}: ${msg.text}`;
     this.running = true;
     chat.setReplyTarget(msg.sender);
     try {

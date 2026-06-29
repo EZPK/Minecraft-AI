@@ -78,6 +78,14 @@ export class ChatRouter {
     this.flushSoon();
   }
 
+  /** Broadcast a short in-game line without directing it at any specific player. */
+  narrate(text: string): void {
+    const prev = this.replyTarget;
+    this.replyTarget = null;
+    this.say(text);
+    this.replyTarget = prev;
+  }
+
   /** Stop the flush timer and drop any pending output. Call on disconnect. */
   dispose(): void {
     if (this.timer) {
@@ -85,6 +93,11 @@ export class ChatRouter {
       this.timer = undefined;
     }
     this.outQueue = [];
+  }
+
+  /** Alias for dispose() — backward-compat with older code. */
+  destroy(): void {
+    this.dispose();
   }
 
   private flushSoon(): void {

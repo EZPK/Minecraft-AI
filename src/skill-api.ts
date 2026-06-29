@@ -1,5 +1,6 @@
 import { Vec3 } from "vec3";
 import pathfinderPkg from "mineflayer-pathfinder";
+import type { Entity } from "prismarine-entity";
 import type { Bot } from "./bot.js";
 import type { ChatRouter } from "./chat.js";
 import { navigateTo } from "./nav.js";
@@ -118,6 +119,14 @@ export class SkillApi {
       const ref = this.bot.blockAt(target.minus(f));
       if (ref && ref.boundingBox === "block") {
         await this.bot.equip(item, "hand");
+        // Force the bot to look at the exact face center before placing — without
+        // this the bot often faces the wrong direction and misses the placement.
+        const faceCenter = ref.position.offset(
+          0.5 + f.x * 0.5,
+          0.5 + f.y * 0.5,
+          0.5 + f.z * 0.5,
+        );
+        await this.bot.lookAt(faceCenter, true);
         await this.bot.placeBlock(ref, f);
         return;
       }
@@ -139,6 +148,14 @@ export class SkillApi {
     await this.bot.craft(recipes[0]!, count, table ?? undefined);
   }
 
+  /** Equip an item from inventory into the main hand. */
+  async equip(name: string): Promise<void> {
+    this.throwIfAborted();
+    const item = this.bot.inventory.items().find((i) => i.name === name);
+    if (!item) throw new Error(`No ${name} in inventory`);
+    await this.bot.equip(item, "hand");
+  }
+
   /** Item counts in the inventory. */
   inventory(): Record<string, number> {
     const counts: Record<string, number> = {};
@@ -146,6 +163,55 @@ export class SkillApi {
       counts[it.name] = (counts[it.name] ?? 0) + it.count;
     }
     return counts;
+  }
+
+  /** Dig the block at the given coordinates. Returns true if dug, false if nothing to dig. */
+  async dig(x: number, y: number, z: number): Promise<boolean> {
+    this.throwIfAborted();
+    const block = this.bot.blockAt(new Vec3(x, y, z));
+    if (!block || !this.bot.canDigBlock(block)) return false;
+    await this.bot.dig(block, true);
+    return true;
+  }
+
+  /** Turn to face a point in the world. */
+  async lookAt(x: number, y: number, z: number): Promise<void> {
+    this.throwIfAborted();
+    await this.bot.lookAt(new Vec3(x, y, z), true);
+  }
+
+  /** Attack an entity (obtained from findEntities). */
+  attack(entity: Entity): void {
+    this.throwIfAborted();
+    this.bot.attack(entity);
+  }
+
+  /** Nearby entities sorted by distance, optionally filtered by name. */
+  findEntities(name?: string, radius = 32): Entity[] {
+    const pos = this.bot.entity.position;
+    return Object.values(this.bot.entities)
+      .filter((e): e is Entity => e != null && e !== this.bot.entity)
+      .filter((e) => !name || e.name === name || e.type === name)
+      .filter((e) => e.position.distanceTo(pos) <= radius)
+      .sort((a, b) => a.position.distanceTo(pos) - b.position.distanceTo(pos));
+  }
+
+  /** Snapshot of bot vitals. */
+  status(): {
+    health: number;
+    food: number;
+    saturation: number;
+    experience: number;
+    position: { x: number; y: number; z: number };
+  } {
+    const { x, y, z } = this.bot.entity.position;
+    return {
+      health: this.bot.health,
+      food: this.bot.food,
+      saturation: this.bot.foodSaturation,
+      experience: this.bot.experience?.level ?? 0,
+      position: { x, y, z },
+    };
   }
 }
 

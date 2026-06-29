@@ -19,7 +19,7 @@ export default async function (skills, args) {
     // Snapshot positions of all mature crops of this type
     const positions = bot.findBlocks({
       point: bot.entity.position,
-      matching: b => b && b.name === cropName && b.metadata >= matureAge,
+      matching: b => b && b.name === cropName && Number(b.getProperties()?.age ?? 0) >= matureAge,
       maxDistance: radius,
       count: 64,
     });
@@ -27,11 +27,11 @@ export default async function (skills, args) {
     for (const pos of positions) {
       const block = bot.blockAt(pos);
       // Re-check maturity (might have been harvested already)
-      if (!block || block.name !== cropName || block.metadata < matureAge) continue;
+      if (!block || block.name !== cropName || Number(block.getProperties()?.age ?? 0) < matureAge) continue;
 
       try {
         await skills.goto(pos.x + 0.5, pos.y, pos.z + 0.5, 2);
-        await bot.dig(block);
+        await skills.dig(pos.x, pos.y, pos.z);
         harvested++;
         await skills.wait(250);
 

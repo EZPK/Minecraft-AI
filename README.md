@@ -61,5 +61,34 @@ Local models (Ollama, LM Studio) run fully offline — no API key.
 - **Talk**: `say`
 - **Learn**: `save_skill`, `run_skill`, `list_skills` — write reusable
   JavaScript skills against the `SkillApi` and grow a library.
+- **Ask an expert** (optional): `ask_minecraft_expert` — consult a local
+  Minecraft-tuned model (e.g. Andy-4) for recipes and tactics. Enabled only when
+  `KNOWLEDGE_MODEL` is set.
+
+## Self-improvement: eval + evolution
+
+The bot can get better at "playing Minecraft" through a closed loop that scores
+its behaviour and lets it rewrite its own skill library.
+
+```bash
+cp .env.eval.example .env.eval   # set a separate bot account + an "arena" coord
+npm run eval                     # score the whole scenario suite on your server
+npm run eval -- collect_wood     # score a single scenario
+npm run evolve -- 3              # run 3 generations of reflection-driven evolution
+```
+
+- **Eval harness** (`src/eval/`) boots the bot headless, injects a goal, and
+  scores the before/after world with a fitness function. It returns the bot to a
+  fixed **arena** between episodes and skips scenarios whose preconditions aren't
+  met, so it never scores the agent on the world's luck.
+- **Evolution loop** (`src/evolve/`) baselines the suite on `main`, branches a
+  git **worktree**, lets a reflection step (a coding pi session) improve the
+  weakest scenario's skills, gates on JS syntax, re-evaluates, and **merges to
+  `main` only if the candidate beats baseline** by a variance-sized margin.
+  Every accepted change is an ordinary commit you can inspect or revert.
+
+Evaluation runs against your live server (no fixed seed), so it leans on
+low-noise signals (tech-tree progress, tool-error rate, deaths) and back-to-back
+A/B comparison.
 
 See [`CLAUDE.md`](./CLAUDE.md) for architecture and development notes.
