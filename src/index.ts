@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { initFileLogging } from "./log.js";
 import { loadConfig, type AppConfig } from "./config.js";
 import { createBot } from "./bot.js";
@@ -35,13 +36,11 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
   // OBS overlay HUD — activate by setting OVERLAY_PORT=8088 in .env
   if (process.env.OVERLAY_PORT) {
     const overlayPort = Number(process.env.OVERLAY_PORT);
-    import(
-      /* webpackIgnore: true */
-      new URL("../overlay_obs/bot-overlay.mjs", import.meta.url).href
-    )
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const overlayUrl = pathToFileURL(join(cwd, "overlay_obs", "bot-overlay.mjs")).href;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    import(overlayUrl)
       .then((m: any) => (m.startOverlay as (b: unknown, o: { port: number }) => void)(bot, { port: overlayPort }))
-      .catch((err: unknown) => console.warn("[overlay] failed to start:", err));
+      .catch((err: unknown) => console.error("[overlay] failed to start:", err));
   }
   await brain.start();
 
