@@ -6,7 +6,8 @@ import { guard, type ToolFactory } from "./context.js";
 // bot runs fine without a local Minecraft model. Andy-4 is a Minecraft-tuned
 // (Llama-3.1-8B) model with an 8k context — too small/narrow to be the brain,
 // but a great cheap domain oracle the pi brain can consult.
-const TIMEOUT_MS = 20_000;
+// First call loads the model from disk; allow enough time for that cold start.
+const TIMEOUT_MS = 120_000;
 
 const SYSTEM =
   "You are a concise Minecraft expert. Answer with practical, accurate, " +
