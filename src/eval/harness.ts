@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { Vec3 } from "vec3";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { AppConfig } from "../config.js";
 import { createBot, type Bot } from "../bot.js";
@@ -93,6 +94,7 @@ export class EvalHarness {
   /** Run one scenario once and return its scored result. */
   async runScenario(s: Scenario): Promise<ScenarioRun> {
     await this.returnToArena();
+    await this.dumpInventory();
 
     const before = this.snapshot();
     const skipped = s.precondition?.(this.bot, before) ?? null;
@@ -185,6 +187,58 @@ export class EvalHarness {
       unsub();
     }
     return timedOut;
+  }
+
+  /**
+   * Dump all inventory items into the eval chest before each episode so every
+   * scenario starts from a clean, reproducible state.
+   *
+   * Requires EVAL_CHEST_X/Y/Z in .env.eval pointing to a pre-placed chest near
+   * the arena. If not configured (or chest not found), logs a warning and skips.
+   */
+  private async dumpInventory(): Promise<void> {
+    const cx = process.env.EVAL_CHEST_X;
+    const cy = process.env.EVAL_CHEST_Y;
+    const cz = process.env.EVAL_CHEST_Z;
+    if (!cx || !cy || !cz) return;
+
+    const x = Number(cx), y = Number(cy), z = Number(cz);
+
+    try {
+      await this.skillApi.goto(x, y, z, 3);
+    } catch {
+      console.warn("[eval] could not reach chest — skipping inventory dump");
+      return;
+    }
+
+    const chestBlock = this.bot.blockAt(new Vec3(x, y, z));
+    if (!chestBlock || !["chest", "trapped_chest"].includes(chestBlock.name)) {
+      console.warn(
+        `[eval] no chest at (${x}, ${y}, ${z}) — found "${chestBlock?.name ?? "air"}". ` +
+          "Set EVAL_CHEST_X/Y/Z to a pre-placed chest near the arena.",
+      );
+      return;
+    }
+
+    let chest;
+    try {
+      chest = await this.bot.openChest(chestBlock);
+    } catch (err) {
+      console.warn("[eval] could not open chest:", (err as Error).message);
+      return;
+    }
+
+    const items = this.bot.inventory.items();
+    console.log(`[eval] dumping ${items.length} stack(s) into chest…`);
+    for (const item of items) {
+      try {
+        await chest.deposit(item.type, null, item.count);
+      } catch {
+        // Chest full or item type mismatch — continue with remaining items.
+      }
+    }
+    chest.close();
+    console.log("[eval] inventory cleared.");
   }
 
   private async returnToArena(): Promise<void> {
