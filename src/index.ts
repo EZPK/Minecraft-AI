@@ -16,14 +16,19 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
   const selfName = bot.username ?? config.minecraft.username;
   console.log(`[mindcraft-pi] spawned as "${selfName}".`);
 
+  // Flipped to false the moment the bot disconnects, so in-flight tools and
+  // skills stop acting on a dead bot instead of zombie-looping.
+  let alive = true;
+  const isAlive = () => alive;
+
   const chat = new ChatRouter(bot, selfName);
   const telemetry = new BotTelemetry(bot);
   telemetry.start();
-  const skills = new SkillRuntime(join(cwd, "skills"), bot, chat);
+  const skills = new SkillRuntime(join(cwd, "skills"), bot, chat, isAlive);
   await skills.init();
   const memory = new FileMemory(cwd);
 
-  const tools = createMinecraftTools({ bot, chat, skills, memory });
+  const tools = createMinecraftTools({ bot, chat, skills, memory, isAlive });
   const brain = new AgentBrain({ config, chat, customTools: tools, cwd, memory, resumeSession: true });
   await brain.start();
 
@@ -41,6 +46,14 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
     const shutdown = (label: string) => {
       if (settled) return;
       settled = true;
+      // Mark dead and stop movement first: tools/skills now fail fast instead of
+      // acting on a disconnected bot.
+      alive = false;
+      try {
+        bot.pathfinder?.setGoal(null);
+      } catch {
+        /* pathfinder may not be loaded / already torn down */
+      }
       console.log(`[mindcraft-pi] ${label} — aborting brain…`);
       // Snapshot where we left off so the next session resumes with context,
       // even if the agent never explicitly called `remember`.

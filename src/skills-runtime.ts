@@ -25,6 +25,7 @@ export class SkillRuntime {
     private readonly dir: string,
     private readonly bot: Bot,
     private readonly chat: ChatRouter,
+    private readonly isAlive: () => boolean = () => true,
   ) {}
 
   async init(): Promise<void> {
@@ -81,7 +82,7 @@ export class SkillRuntime {
 
     const argsStr = Object.keys(args).length ? ` ${JSON.stringify(args)}` : "";
     console.log(`[skill:run] ${name}${argsStr}`);
-    const api = new SkillApi(this.bot, this.chat);
+    const api = new SkillApi(this.bot, this.chat, this.isAlive);
     const result = await withTimeout(fn(api, args), timeoutMs, name);
     const logs = api.getLogs();
     console.log(`[skill:run] ${name} done — result: ${safeStringify(result)}`);

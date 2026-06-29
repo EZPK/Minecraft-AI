@@ -10,6 +10,12 @@ export interface ToolContext {
   chat: ChatRouter;
   skills: SkillRuntime;
   memory: Memory;
+  /**
+   * Whether the bot is still connected. When it returns false (the bot was
+   * kicked/disconnected), tools fail fast instead of acting on a dead bot.
+   * Optional: the eval harness omits it.
+   */
+  isAlive?: () => boolean;
 }
 
 export type ToolFactory = (ctx: ToolContext) => ToolDefinition[];
