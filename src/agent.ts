@@ -78,6 +78,10 @@ export class AgentBrain {
           break;
         case "tool_execution_start":
           console.log(`[tool] ${event.toolName}(${compact(event.args)})`);
+          if (config.narrate) {
+            const line = narrateAction(event.toolName, event.args);
+            if (line) chat.narrate(line);
+          }
           break;
         case "tool_execution_end":
           if (event.isError) {
@@ -91,7 +95,13 @@ export class AgentBrain {
             this.textBuffer += event.assistantMessageEvent.delta;
           } else if (event.assistantMessageEvent.type === "thinking_end") {
             const thought = event.assistantMessageEvent.content.trim();
-            if (thought) console.log(`\x1b[2m🤔 ${thought}\x1b[0m`);
+            if (thought) {
+              console.log(`\x1b[2m🤔 ${thought}\x1b[0m`);
+              if (config.narrate) {
+                const summary = summarizeThought(thought);
+                if (summary) chat.narrate(`💭 ${summary}`);
+              }
+            }
           }
           break;
         case "message_end": {
@@ -220,4 +230,65 @@ function compact(v: unknown, max = 80): string {
   } catch {
     return String(v);
   }
+}
+
+function narrateAction(toolName: string, args: unknown): string | undefined {
+  const a = (args ?? {}) as Record<string, unknown>;
+  const s = (v: unknown): string | undefined =>
+    typeof v === "string" && v.trim() ? v.trim() : undefined;
+  const n = (v: unknown): number | undefined =>
+    typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  const qty = (v: unknown): string => (n(v) && n(v)! > 1 ? `${n(v)} ` : "");
+
+  switch (toolName) {
+    case "mine":
+      return `⛏️ Je mine ${qty(a.count)}${s(a.block) ?? "des blocs"}…`;
+    case "place_block":
+      return `🧱 Je place ${s(a.block) ?? "un bloc"}…`;
+    case "craft":
+      return `🔨 Je fabrique ${qty(a.count)}${s(a.item) ?? "un objet"}…`;
+    case "move_to": {
+      const x = n(a.x), y = n(a.y), z = n(a.z);
+      return x !== undefined && y !== undefined && z !== undefined
+        ? `🚶 Direction (${Math.round(x)}, ${Math.round(y)}, ${Math.round(z)})…`
+        : "🚶 Je me déplace…";
+    }
+    case "go_to_player":
+      return `🚶 Je rejoins ${s(a.player) ?? "le joueur"}…`;
+    case "follow_player":
+      return `🐾 Je suis ${s(a.player) ?? "le joueur"}…`;
+    case "attack":
+      return `⚔️ J'attaque ${s(a.target) ?? "l'ennemi le plus proche"}…`;
+    case "find_blocks":
+      return `🔎 Je cherche ${s(a.block) ?? "des blocs"}…`;
+    case "run_skill":
+      return `🛠️ J'utilise la compétence « ${s(a.name) ?? "?"} »…`;
+    case "save_skill":
+      return `💾 J'écris une nouvelle compétence « ${s(a.name) ?? "?"} »…`;
+    case "ask_minecraft_expert":
+      return "🧠 Je consulte l'expert Minecraft…";
+    case "remember":
+      return "📝 Je note ça dans ma mémoire…";
+    default:
+      return undefined;
+  }
+}
+
+function summarizeThought(thought: string, max = 180): string {
+  const flat = thought
+    .replace(/```[\s\S]*?```/g, " ")
+    .split("\n")
+    .map((line) => line.replace(/^\s*[#>*\-]+\s*/, "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!flat) return "";
+  let out = "";
+  for (const sentence of flat.split(/(?<=[.!?])\s+/)) {
+    const next = out ? `${out} ${sentence}` : sentence;
+    if (next.length > max) break;
+    out = next;
+  }
+  return out || `${flat.slice(0, max - 1)}…`;
 }

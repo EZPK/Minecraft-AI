@@ -156,7 +156,7 @@ Then smelt using the `furnace` block nearby or craft a furnace first.
 scan_surroundings {}                    ← check what food/animals are nearby
 gather_food { count: 3 }               ← if no food in inventory
 ```
-Then eat manually: `bot.consume()` or ask the player if you should eat.
+Then eat with `run_skill eat_food {}` or ask the player if you should eat.
 
 ### Survey before starting any task
 
@@ -177,8 +177,34 @@ export default async function (skills, args) {
 }
 ```
 
+**SkillApi reference (`skills.*`) :**
+
+| Méthode | Description |
+|---|---|
+| `bot` | Bot mineflayer brut — full API pour tout ce qui n'est pas couvert ci-dessous. Toujours préférer les méthodes ci-dessous. |
+| `goto(x, y, z, range?)` | Marcher vers des coordonnées ; stuck-detection automatique |
+| `gotoPlayer(name, range?)` | Marcher vers un joueur visible |
+| `findBlocks(name, count?, radius?)` | Coordonnées des blocs correspondants → `Vec3[]` |
+| `collectBlock(name, count?, radius?)` | Aller, creuser et collecter → nombre réel |
+| `place(name, x, y, z)` | Poser un bloc contre un bloc solide adjacent |
+| `craft(name, count?)` | Crafter (utilise la table de craft à portée si disponible) |
+| `equip(name)` | Équiper un item en main principale |
+| `dig(x, y, z)` | Creuser le bloc aux coordonnées données → `true` si creusé |
+| `lookAt(x, y, z)` | Regarder vers un point |
+| `findEntities(name?, radius?)` | Entités proches → `Entity[]` (triées par distance) |
+| `attack(entity)` | Attaquer une entité (obtenue via `findEntities`) |
+| `status()` | Snapshot vitaux → `{ health, food, saturation, experience, position }` |
+| `inventory()` | Counts items → `Record<string, number>` |
+| `say(text)` | Parler dans le chat en cours de skill |
+| `log(text)` | Enregistrer une progression (terminal + retourné à l'agent) |
+| `wait(ms)` | Attendre ms millisecondes (annulé proprement si timeout) |
+| `aborted` | `true` si le skill a été annulé (timeout 120 s) |
+| `throwIfAborted()` | Throw si annulé — utiliser dans les boucles longues |
+
 **Key rules:**
+- Utiliser `skills.dig()` et non `skills.bot.dig()` — la méthode SkillApi force le regard (`forceLook`), indispensable pour casser le bon bloc.
+- Utiliser `skills.place()` et non `skills.bot.placeBlock()` — la méthode SkillApi regarde la face exacte avant de placer.
 - Always `skills.log()` progress so the agent and operator can follow along.
-- `try/catch` around `skills.goto()` and `bot.dig()` — pathfinding and digging can fail.
+- `try/catch` around `skills.goto()` and `skills.dig()` — pathfinding and digging can fail.
 - Return a useful value; the agent reads it to decide next steps.
 - Skills hot-reload: edit the file and `run_skill` again — no restart needed.
