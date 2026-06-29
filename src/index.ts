@@ -56,6 +56,9 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
         /* pathfinder may not be loaded / already torn down */
       }
       console.log(`[mindcraft-pi] ${label} — aborting brain…`);
+      // Hard deadline covers both checkpoint I/O and the LLM abort call, so a
+      // hang at either step never blocks the reconnect loop indefinitely.
+      const fallback = setTimeout(resolve, 15_000);
       // Snapshot where we left off so the next session resumes with context,
       // even if the agent never explicitly called `remember`.
       const pos = bot.entity?.position;
@@ -67,13 +70,11 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
           pathFailures: telemetry.counters.pathFailures,
         })
         .catch((err) => console.error("[mindcraft-pi] checkpoint failed:", err))
+        .then(() => brain.abort())
+        .catch(() => { /* abort error must not suppress reconnect */ })
         .finally(() => {
-          // Timeout so a hanging LLM call never blocks reconnect indefinitely.
-          const fallback = setTimeout(resolve, 10_000);
-          void brain.abort().finally(() => {
-            clearTimeout(fallback);
-            resolve();
-          });
+          clearTimeout(fallback);
+          resolve();
         });
     };
     bot.on("error", (err) => console.error("[mindcraft-pi] bot error:", err));
