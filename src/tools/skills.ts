@@ -28,7 +28,7 @@ export const skillTools: ToolFactory = ({ skills }) => [
     name: "save_skill",
     label: "Save skill",
     description:
-      "Create or overwrite a reusable skill. `code` must be an ES module whose default export is `async (skills, args) => { ... }`. Start the file with a /** one-line description */ JSDoc. Use the SkillApi (skills.bot, skills.goto, skills.collectBlock, skills.craft, skills.place, skills.say, skills.log, skills.inventory, ...).",
+      "Create or overwrite a reusable skill. `code` must be an ES module whose default export is `async (skills, args) => { ... }`. Start the file with a /** one-line description */ JSDoc. Use the SkillApi (skills.bot, skills.goto, skills.gotoPlayer, skills.findBlocks, skills.collectBlock, skills.craft, skills.place, skills.equip, skills.dig, skills.lookAt, skills.findEntities, skills.attack, skills.status, skills.inventory, skills.say, skills.log, skills.wait, ...).",
     parameters: Type.Object({
       name: Type.String({
         description: "snake_case skill name, e.g. \"chop_nearest_tree\".",

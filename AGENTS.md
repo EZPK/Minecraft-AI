@@ -13,12 +13,14 @@ confirm what's on disk; the descriptions below explain *when* and *how* to use e
 | You need the result immediately in the same turn | The task loops or has error-recovery logic |
 | The action is simple enough to inline | The task is worth reusing later |
 
-> **Ask the expert first.** If the `ask_minecraft_expert` tool is present, make it
-> your *first reflex* before any non-trivial goal or unfamiliar craft: ask it for
-> recipes, the items/steps a goal needs, the tech-tree order, or survival tactics
-> — *then* act with your own tools and skills. Don't guess recipes or
-> requirements; a quick question saves failed crafts and wasted actions. (Only
-> available when a local Minecraft model is configured.)
+> **Ask the expert first — obligatoire.** Avant de commencer toute tâche
+> impliquant du craft, du minage, de la construction, de l'agriculture ou un
+> objectif multi-étapes, tu **DOIS** appeler `ask_minecraft_expert`. Pose-lui :
+> la recette exacte et les matériaux requis, l'ordre du tech-tree (qu'est-ce
+> qu'il faut construire en premier ?), et la méthode optimale. Fais-le même si
+> tu penses connaître la réponse. N'agis qu'après avoir reçu la réponse. Deviner
+> et agir à l'aveugle est une erreur ; l'appel expert est rapide et gratuit.
+> (Disponible seulement si un modèle Minecraft local est configuré.)
 >
 > **Remember across sessions.** You start amnesiac on every reconnect. Use
 > `remember` to save durable facts (base/home coords, chest & resource-site
@@ -120,6 +122,151 @@ run_skill("harvest_crops", {
 
 ---
 
+### `mine_iron_vein` — Mine nearby iron ore
+Finds and mines iron ore and deepslate iron ore within radius. Auto-equips the best
+pickaxe available.
+
+```js
+run_skill("mine_iron_vein", {
+  count: 8,      // default 8
+  radius: 32,    // default 32
+})
+// → { mined, requested }
+```
+
+Use `dig_shaft` first to reach Y=16 (iron level), then call this.
+
+---
+
+### `smelt_in_furnace` — Smelt items
+Navigates to the nearest furnace, loads input + fuel, waits for output, then
+reclaims any leftover input and fuel.
+
+```js
+run_skill("smelt_in_furnace", {
+  input: "raw_iron",   // required — item to smelt
+  fuel: "coal",        // default "coal"
+  count: 8,            // default 1
+})
+// → { smelted, output }
+```
+
+---
+
+### `empty_furnace` — Empty a furnace
+Retrieves output, input, and fuel from the nearest furnace into inventory.
+
+```js
+run_skill("empty_furnace", {})
+// → {}
+```
+
+---
+
+### `eat_food` — Eat the held item
+Activates (right-click) whatever is currently held in hand. Equip food first.
+
+```js
+run_skill("eat_food", {})
+// → { ate: "cooked_beef" }
+```
+
+---
+
+### `eat_specific_food` — Equip and eat a food item
+Finds a specific food in inventory, equips it, and eats it.
+
+```js
+run_skill("eat_specific_food", {
+  item: "cooked_chicken",   // default "cooked_chicken"
+})
+// → { ate, health, food }
+```
+
+---
+
+### `break_grass_for_seeds` — Collect wheat seeds
+Breaks nearby short/tall grass to collect wheat seeds. Navigates to each patch.
+
+```js
+run_skill("break_grass_for_seeds", {
+  radius: 8,    // default 8
+  count: 10,    // target seed count to stop early (default 10)
+})
+// → { broken, seeds }
+```
+
+---
+
+### `craft_at_table` — Craft using a crafting table
+Crafts an item using a crafting table within 4 blocks. The table must already be
+placed in the world.
+
+```js
+run_skill("craft_at_table", {
+  item: "oak_planks",   // required — Minecraft item name
+  count: 8,             // default 1
+})
+// → { crafted, count }
+```
+
+---
+
+### `place_crafting` — Place a crafting table
+Places a crafting table from inventory at the bot's feet using the block below as a
+reference. Stops pathfinder first to avoid movement conflicts.
+
+```js
+run_skill("place_crafting", {})
+// → { placed: true, at: { x, y, z } }
+```
+
+---
+
+### `place_door` — Place a door
+Places an oak door in front of the bot (bottom block position).
+
+```js
+run_skill("place_door", {})
+// → true | false
+```
+
+---
+
+### `dig_nearby` — Dig blocks without pathfinding
+Digs blocks of a given type within reach (≤5 blocks) without using the pathfinder.
+Useful as a fallback when pathfinding fails.
+
+```js
+run_skill("dig_nearby", {
+  block: "stone",   // required
+  count: 1,         // default 1
+  radius: 10,       // search radius (default 10)
+})
+// → count of blocks dug
+```
+
+---
+
+### `build_house` — Build a wooden house
+Clears the footprint, then builds floor, walls, roof, and optionally a door at the
+current position. Size and material are configurable.
+
+```js
+run_skill("build_house", {
+  width: 7,              // default 7
+  depth: 5,              // default 5
+  wall_height: 3,        // default 3
+  block: "oak_planks",   // default "oak_planks"
+})
+// → { origin: { x, y, z }, width, depth, placed }
+```
+
+Gather enough planks before calling (a 7×5 house needs ~160 blocks). Have a door
+item in inventory for automatic door placement.
+
+---
+
 ## Common task recipes
 
 ### Get wood → make planks → make sticks/crafting table
@@ -135,23 +282,32 @@ craft { name: "oak_planks", count: 32 }   ← use the craft tool
 ```
 equip_best_tool { activity: "mining" }
 dig_shaft { target_y: 16 }
-gather_resource { block: "iron_ore", count: 8, max_radius: 32 }
+mine_iron_vein { count: 8 }
 ```
-Then smelt using the `furnace` block nearby or craft a furnace first.
+Then smelt: place a furnace nearby, run `smelt_in_furnace { input: "raw_iron", fuel: "coal", count: 8 }`.
 
 ### Feed yourself
 
 ```
-scan_surroundings {}                    ← check what food/animals are nearby
-gather_food { count: 3 }               ← if no food in inventory
+scan_surroundings {}                         ← check what food/animals are nearby
+gather_food { count: 3 }                     ← if no food in inventory
+eat_specific_food { item: "raw_beef" }       ← or any food you have
 ```
-Then eat manually: `bot.consume()` or ask the player if you should eat.
 
 ### Survey before starting any task
 
 When you've just spawned or been reconnected: **`recall` your memory first** (to
 know your base, objective, and past lessons), then call `scan_surroundings` — it
 gives you inventory, health, and what's nearby in one go.
+
+### Build a shelter
+
+```
+gather_resource { block: "oak_log", count: 16 }
+craft { name: "oak_planks", count: 64 }
+craft { name: "oak_door", count: 1 }
+build_house {}
+```
 
 ---
 
@@ -166,6 +322,28 @@ export default async function (skills, args) {
   return { got };                      // return a plain object or primitive
 }
 ```
+
+**SkillApi reference (`skills.*`) :**
+
+| Méthode | Description |
+|---|---|
+| `bot` | Bot mineflayer brut — full API pour tout ce qui n'est pas couvert ci-dessous |
+| `goto(x, y, z, range?)` | Marcher vers des coordonnées ; timeout 60 s, détection de blocage |
+| `gotoPlayer(name, range?)` | Marcher vers un joueur ; throw si non visible |
+| `findBlocks(name, count?, radius?)` | Coordonnées des blocs correspondants → `Vec3[]` |
+| `collectBlock(name, count?, radius?)` | Aller, creuser et collecter → count réel |
+| `place(name, x, y, z)` | Poser un bloc de l'inventaire contre un bloc solide adjacent |
+| `craft(name, count?)` | Crafter ; utilise la table de craft à portée si disponible |
+| `equip(name)` | Équiper un item de l'inventaire en main principale |
+| `dig(x, y, z)` | Creuser le bloc aux coordonnées données → `true` si creusé |
+| `lookAt(x, y, z)` | Faire pivoter la vue vers un point |
+| `findEntities(name?, radius?)` | Entités proches triées par distance → `Entity[]` |
+| `attack(entity)` | Attaquer une entité (obtenue via `findEntities`) |
+| `status()` | Snapshot des vitaux → `{ health, food, saturation, experience, position }` |
+| `inventory()` | Counts des items → `Record<string, number>` |
+| `say(text)` | Parler dans le chat en cours de skill |
+| `log(text)` | Enregistrer une progression (terminal + retourné à l'agent) |
+| `wait(ms)` | Attendre `ms` millisecondes |
 
 **Key rules:**
 - Always `skills.log()` progress so the agent and operator can follow along.

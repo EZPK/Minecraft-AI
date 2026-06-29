@@ -1,30 +1,24 @@
 /** Survey the area and return a structured snapshot: position, health, inventory, nearby entities and blocks of interest. */
 export default async function (skills, args) {
   const radius = args.radius ?? 32;
-  const bot = skills.bot;
-  const pos = bot.entity.position;
 
-  // Status
+  const vitals = skills.status();
   const status = {
-    position: { x: Math.round(pos.x), y: Math.round(pos.y), z: Math.round(pos.z) },
-    health: bot.health,
-    food: bot.food,
-    saturation: bot.foodSaturation,
-    experience: bot.experience?.level ?? 0,
+    position: { x: Math.round(vitals.position.x), y: Math.round(vitals.position.y), z: Math.round(vitals.position.z) },
+    health: vitals.health,
+    food: vitals.food,
+    saturation: vitals.saturation,
+    experience: vitals.experience,
   };
 
-  // Nearby entities (players, mobs, animals)
-  const entities = Object.values(bot.entities)
-    .filter(e => e !== bot.entity && e.position.distanceTo(pos) <= radius)
+  const entities = skills.findEntities(undefined, radius)
     .map(e => ({
       name: e.name ?? e.type,
       kind: e.type,
-      distance: Math.round(e.position.distanceTo(pos)),
+      distance: Math.round(e.position.distanceTo(skills.bot.entity.position)),
     }))
-    .sort((a, b) => a.distance - b.distance)
     .slice(0, 24);
 
-  // Blocks of interest — scan a curated list so we don't spam findBlocks for everything
   const INTERESTING = [
     'diamond_ore', 'deepslate_diamond_ore',
     'iron_ore', 'deepslate_iron_ore',

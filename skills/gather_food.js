@@ -5,26 +5,24 @@ export default async function (skills, args) {
   const targets = args.animals
     ? Array.isArray(args.animals) ? args.animals : [args.animals]
     : ALL_ANIMALS;
-  const bot = skills.bot;
 
   let killed = 0;
   const MAX_ATTEMPTS = count * 4;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS && killed < count; attempt++) {
-    // Find the nearest target animal still alive
-    const entity = Object.values(bot.entities)
-      .filter(e => e !== bot.entity && targets.includes(e.name ?? '') && e.isValid)
-      .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
+    const entity = targets
+      .flatMap(name => skills.findEntities(name, 32))
+      .filter(e => e.isValid)
+      .sort((a, b) => a.position.distanceTo(skills.bot.entity.position) - b.position.distanceTo(skills.bot.entity.position))[0];
 
     if (!entity) {
       skills.log('No animals in range');
       break;
     }
 
-    const dist = entity.position.distanceTo(bot.entity.position);
+    const dist = entity.position.distanceTo(skills.bot.entity.position);
     skills.log(`Found ${entity.name} at ${dist.toFixed(1)} blocks`);
 
-    // Approach
     if (dist > 3) {
       const { x, y, z } = entity.position;
       try {
@@ -35,22 +33,20 @@ export default async function (skills, args) {
       }
     }
 
-    // Attack until dead (max 15 hits to avoid infinite loop if something's wrong)
-    await bot.lookAt(entity.position.offset(0, entity.height * 0.5, 0));
+    const eyePos = entity.position.offset(0, entity.height * 0.5, 0);
+    await skills.lookAt(eyePos.x, eyePos.y, eyePos.z);
     for (let hit = 0; hit < 15 && entity.isValid; hit++) {
-      bot.attack(entity);
+      skills.attack(entity);
       await skills.wait(600);
     }
 
     if (!entity.isValid) {
       killed++;
       skills.log(`Killed ${entity.name} (${killed}/${count})`);
-      // Stay near death site — Minecraft auto-pickup handles item collection
       await skills.wait(1200);
     }
   }
 
-  // Report food now in inventory
   const FOOD_KEYWORDS = ['beef', 'pork', 'chicken', 'mutton', 'rabbit', 'meat', 'fish'];
   const food = Object.fromEntries(
     Object.entries(skills.inventory()).filter(([k]) =>

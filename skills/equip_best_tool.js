@@ -1,4 +1,4 @@
-/** Equip the best available tool for an activity. activity: "mining" | "woodcutting" | "combat" | "digging" */
+/** Equip the best available tool for an activity. activity: "mining" | "woodcutting" | "combat" | "digging" | "farming" */
 export default async function (skills, args) {
   const ACTIVITY_TOOL = {
     mining: 'pickaxe',
