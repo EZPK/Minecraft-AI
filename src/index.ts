@@ -5,6 +5,7 @@ import { createBot } from "./bot.js";
 import { ChatRouter } from "./chat.js";
 import { SkillRuntime } from "./skills-runtime.js";
 import { FileMemory } from "./memory.js";
+import { BotTelemetry } from "./telemetry.js";
 import { createMinecraftTools } from "./tools/index.js";
 import { AgentBrain } from "./agent.js";
 
@@ -16,13 +17,20 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
   const selfName = bot.username ?? config.minecraft.username;
   console.log(`[mindcraft-pi] spawned as "${selfName}".`);
 
-  const chat = new ChatRouter(bot, selfName);
-  const skills = new SkillRuntime(join(cwd, "skills"), bot, chat);
-  await skills.init();
+  // Flipped to false the moment the bot disconnects, so in-flight tools and
+  // skills stop acting on a dead bot instead of zombie-looping.
+  let alive = true;
+  const isAlive = () => alive;
 
+  const chat = new ChatRouter(bot, selfName);
+  const telemetry = new BotTelemetry(bot);
+  telemetry.start();
+  const skills = new SkillRuntime(join(cwd, "skills"), bot, chat, isAlive);
+  await skills.init();
   const memory = new FileMemory(cwd);
-  const tools = createMinecraftTools({ bot, chat, skills, memory });
-  const brain = new AgentBrain({ config, chat, customTools: tools, cwd, memory });
+
+  const tools = createMinecraftTools({ bot, chat, skills, memory, isAlive });
+  const brain = new AgentBrain({ config, chat, customTools: tools, cwd, memory, resumeSession: true });
   await brain.start();
 
   chat.onPlayerMessage((msg) => {
@@ -39,24 +47,36 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
     const shutdown = (label: string) => {
       if (settled) return;
       settled = true;
+      // Mark dead first: tools/skills now fail fast instead of acting on a
+      // disconnected bot. Stop pathfinder immediately too.
+      alive = false;
+      chat.destroy();
+      try {
+        bot.pathfinder?.setGoal(null);
+      } catch {
+        /* pathfinder may not be loaded / already torn down */
+      }
       console.log(`[mindcraft-pi] ${label} — aborting brain…`);
-      chat.dispose();
-      const checkpointAndAbort = async () => {
-        if (brain.lastObjective) {
-          await memory
-            .checkpoint({ objective: brain.lastObjective })
-            .catch(() => {});
-        }
-        await brain.abort();
-      };
-      void checkpointAndAbort().finally(resolve);
+      // Hard deadline: a hang at checkpoint I/O or the LLM abort must not block
+      // the reconnect loop indefinitely.
+      const fallback = setTimeout(resolve, 15_000);
+      const pos = bot.entity?.position;
+      void memory
+        .checkpoint({
+          objective: brain.lastObjective,
+          position: pos ? { x: pos.x, y: pos.y, z: pos.z } : undefined,
+          deaths: telemetry.counters.deaths,
+          pathFailures: telemetry.counters.pathFailures,
+        })
+        .catch((err) => console.error("[mindcraft-pi] checkpoint failed:", err))
+        .then(() => brain.abort())
+        .catch(() => { /* abort error must not suppress reconnect */ })
+        .finally(() => {
+          clearTimeout(fallback);
+          resolve();
+        });
     };
-    bot.on("error", (err) => {
-      console.error("[mindcraft-pi] bot error:", err);
-      // An error not followed by an `end` would leave the bot alive-but-broken;
-      // tear the session down so the reconnect loop can recover.
-      shutdown("error");
-    });
+    bot.on("error", (err) => console.error("[mindcraft-pi] bot error:", err));
     bot.on("kicked", (reason) => {
       console.error("[mindcraft-pi] kicked:", reason);
       shutdown("kicked");

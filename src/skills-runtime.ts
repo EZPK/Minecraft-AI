@@ -26,6 +26,7 @@ export class SkillRuntime {
     private readonly dir: string,
     private readonly bot: Bot,
     private readonly chat: ChatRouter,
+    private readonly isAlive: () => boolean = () => true,
   ) {}
 
   async init(): Promise<void> {
@@ -87,10 +88,18 @@ export class SkillRuntime {
 
     const argsStr = Object.keys(args).length ? ` ${JSON.stringify(args)}` : "";
     console.log(`[skill:run] ${name}${argsStr}`);
-    // Cooperative cancellation: on timeout/cleanup we abort the signal so the
-    // skill's next `await skills.wait()` throws and its loop unwinds, instead of
-    // running on forever in the background after we've "timed out".
+    // Cooperative cancellation: on timeout/cleanup/disconnect we abort the signal
+    // so the skill's next `await skills.wait()` throws and its loop unwinds,
+    // instead of running on forever in the background.
     const controller = new AbortController();
+
+    // Abort immediately when the bot disconnects — don't wait for the 120s timeout.
+    const onEnd = () => {
+      controller.abort(new Error("bot disconnected"));
+      try { this.bot.pathfinder?.setGoal(null); } catch { /* already gone */ }
+    };
+    this.bot.once("end", onEnd);
+
     const api = new SkillApi(this.bot, this.chat, controller.signal);
     const skillPromise = fn(api, args);
     // The orphaned loop may reject late (after abort) — swallow it so it doesn't
@@ -102,15 +111,18 @@ export class SkillRuntime {
       console.log(`[skill:run] ${name} done — result: ${safeStringify(result)}`);
       return { result, logs };
     } finally {
+      this.bot.removeListener("end", onEnd);
       // A skill may time out or throw mid-action, leaving the bot in a dirty
       // state (held control keys, an active pathfinder goal, a running
       // collectBlock task). Abort the skill and reset so the next command starts
       // clean instead of the bot digging/walking on its own — and so orphaned
       // loops don't pile up and exhaust memory.
       controller.abort();
-      this.bot.clearControlStates();
-      this.bot.pathfinder.setGoal(null);
-      await this.bot.collectBlock.cancelTask().catch(() => {});
+      if (this.isAlive()) {
+        this.bot.clearControlStates();
+        this.bot.pathfinder.setGoal(null);
+        await this.bot.collectBlock.cancelTask().catch(() => {});
+      }
     }
   }
 }
