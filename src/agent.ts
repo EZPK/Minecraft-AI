@@ -157,7 +157,10 @@ export class AgentBrain {
 
   /** Abort any in-flight agent turn. Safe to call if not started. */
   async abort(): Promise<void> {
-    await this.session?.abort();
+    await Promise.race([
+      this.session?.abort() ?? Promise.resolve(),
+      new Promise<void>((resolve) => setTimeout(resolve, 8_000)),
+    ]);
   }
 
   /** Feed a player's chat message to the agent. */

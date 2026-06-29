@@ -18,6 +18,12 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
   const selfName = bot.username ?? config.minecraft.username;
   console.log(`[mindcraft-pi] spawned as "${selfName}".`);
 
+  // ── deferred session-end promise ───────────────────────────────────────────
+  // Defined before brain.start() so a disconnect that happens during async
+  // setup is never silently swallowed.
+  let resolveSession!: () => void;
+  const sessionDone = new Promise<void>((r) => { resolveSession = r; });
+
   // Flipped to false the moment the bot disconnects, so in-flight tools and
   // skills stop acting on a dead bot instead of zombie-looping.
   let alive = true;
@@ -51,6 +57,54 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
     onThinking: hudThinking,
   });
 
+  // ── shutdown ───────────────────────────────────────────────────────────────
+  let settled = false;
+  const shutdown = (label: string) => {
+    if (settled) return;
+    settled = true;
+    // Mark dead first: tools/skills now fail fast instead of acting on a
+    // disconnected bot. Stop pathfinder immediately too.
+    alive = false;
+    chat.destroy();
+    try {
+      bot.pathfinder?.setGoal(null);
+    } catch {
+      /* pathfinder may not be loaded / already torn down */
+    }
+    console.log(`[mindcraft-pi] ${label} — aborting brain…`);
+    // Hard deadline: brain.abort() has its own 8 s internal timeout; this
+    // fallback covers checkpoint I/O hangs and any other unexpected stall.
+    const fallback = setTimeout(resolveSession, 15_000);
+    const pos = bot.entity?.position;
+    void memory
+      .checkpoint({
+        objective: brain.lastObjective,
+        position: pos ? { x: pos.x, y: pos.y, z: pos.z } : undefined,
+        deaths: telemetry.counters.deaths,
+        pathFailures: telemetry.counters.pathFailures,
+      })
+      .catch((err) => console.error("[mindcraft-pi] checkpoint failed:", err))
+      .then(() => brain.abort())
+      .catch(() => { /* abort error must not suppress reconnect */ })
+      .finally(() => {
+        clearTimeout(fallback);
+        resolveSession();
+      });
+  };
+
+  // Register bot event listeners NOW — before brain.start() — so a disconnect
+  // that happens during async setup is caught and triggers shutdown/reconnect.
+  bot.on("error", (err) => console.error("[mindcraft-pi] bot error:", err));
+  bot.on("kicked", (reason) => {
+    console.error("[mindcraft-pi] kicked:", reason);
+    shutdown("kicked");
+  });
+  bot.on("end", (reason) => {
+    console.error(`[mindcraft-pi] disconnected: ${reason}`);
+    shutdown("disconnected");
+  });
+
+  // ── boot brain ─────────────────────────────────────────────────────────────
   // OBS overlay HUD — activate by setting OVERLAY_PORT=8088 in .env
   if (process.env.OVERLAY_PORT) {
     const overlayPort = Number(process.env.OVERLAY_PORT);
@@ -60,6 +114,7 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
       .then((m: any) => (m.startOverlay as (b: unknown, o: { port: number }) => void)(bot, { port: overlayPort }))
       .catch((err: unknown) => console.error("[overlay] failed to start:", err));
   }
+
   await brain.start();
 
   chat.onPlayerMessage((msg) => {
@@ -71,50 +126,7 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
     `[mindcraft-pi] ready. Talk to me in-game: whisper, mention "${selfName}", or prefix a chat line with "!".`,
   );
 
-  await new Promise<void>((resolve) => {
-    let settled = false;
-    const shutdown = (label: string) => {
-      if (settled) return;
-      settled = true;
-      // Mark dead first: tools/skills now fail fast instead of acting on a
-      // disconnected bot. Stop pathfinder immediately too.
-      alive = false;
-      chat.destroy();
-      try {
-        bot.pathfinder?.setGoal(null);
-      } catch {
-        /* pathfinder may not be loaded / already torn down */
-      }
-      console.log(`[mindcraft-pi] ${label} — aborting brain…`);
-      // Hard deadline: a hang at checkpoint I/O or the LLM abort must not block
-      // the reconnect loop indefinitely.
-      const fallback = setTimeout(resolve, 15_000);
-      const pos = bot.entity?.position;
-      void memory
-        .checkpoint({
-          objective: brain.lastObjective,
-          position: pos ? { x: pos.x, y: pos.y, z: pos.z } : undefined,
-          deaths: telemetry.counters.deaths,
-          pathFailures: telemetry.counters.pathFailures,
-        })
-        .catch((err) => console.error("[mindcraft-pi] checkpoint failed:", err))
-        .then(() => brain.abort())
-        .catch(() => { /* abort error must not suppress reconnect */ })
-        .finally(() => {
-          clearTimeout(fallback);
-          resolve();
-        });
-    };
-    bot.on("error", (err) => console.error("[mindcraft-pi] bot error:", err));
-    bot.on("kicked", (reason) => {
-      console.error("[mindcraft-pi] kicked:", reason);
-      shutdown("kicked");
-    });
-    bot.on("end", (reason) => {
-      console.error(`[mindcraft-pi] disconnected: ${reason}`);
-      shutdown("disconnected");
-    });
-  });
+  await sessionDone;
 }
 
 const INITIAL_BACKOFF_MS = 5_000;

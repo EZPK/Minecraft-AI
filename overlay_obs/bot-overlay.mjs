@@ -64,6 +64,10 @@ export function startOverlay(bot, { port = 8088 } = {}) {
     }
   });
 
+  server.on('error', (err) => {
+    console.error(`[overlay] server error (port ${port}):`, err.message);
+  });
+
   server.listen(port, '0.0.0.0', () => {
     console.log(`[overlay] HUD → http://localhost:${port}  (OBS browser source)`);
   });
@@ -75,6 +79,10 @@ export function startOverlay(bot, { port = 8088 } = {}) {
     const offline = `data: ${JSON.stringify({ connected: false })}\n\n`;
     for (const res of clients) { try { res.write(offline); res.end(); } catch {} }
     clients.clear();
+    // closeAllConnections() forces SSE clients (OBS browser source, etc.) to
+    // drop immediately so the port is released before the reconnect loop tries
+    // to bind a new overlay server on the same port.
+    server.closeAllConnections?.();
     server.close();
   });
 }
