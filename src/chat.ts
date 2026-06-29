@@ -28,6 +28,7 @@ export class ChatRouter {
   private replyTarget: string | null = null;
   private lastNarration = "";
   private lastNarrationAt = 0;
+  private destroyed = false;
 
   constructor(
     private readonly bot: Bot,
@@ -64,6 +65,7 @@ export class ChatRouter {
 
   /** Queue text for output, split into chat-sized chunks. */
   say(text: string): void {
+    if (this.destroyed) return;
     const target = this.replyTarget;
     for (const line of text.split("\n")) {
       const trimmed = line.trim();
@@ -82,6 +84,7 @@ export class ChatRouter {
    * spam-kicked.
    */
   narrate(text: string): void {
+    if (this.destroyed) return;
     // Collapse to a single clean line and strip control chars/newlines — some
     // servers silently drop chat that contains them.
     const trimmed = stripControl(text).replace(/\s+/g, " ").trim();
@@ -98,6 +101,7 @@ export class ChatRouter {
 
   /** Stop the outgoing queue and clear the send timer. Call on disconnect. */
   destroy(): void {
+    this.destroyed = true;
     this.outQueue = [];
     if (this.timer) {
       clearInterval(this.timer);

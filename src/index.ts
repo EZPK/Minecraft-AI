@@ -67,7 +67,14 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
           pathFailures: telemetry.counters.pathFailures,
         })
         .catch((err) => console.error("[mindcraft-pi] checkpoint failed:", err))
-        .finally(() => void brain.abort().finally(resolve));
+        .finally(() => {
+          // Timeout so a hanging LLM call never blocks reconnect indefinitely.
+          const fallback = setTimeout(resolve, 10_000);
+          void brain.abort().finally(() => {
+            clearTimeout(fallback);
+            resolve();
+          });
+        });
     };
     bot.on("error", (err) => console.error("[mindcraft-pi] bot error:", err));
     bot.on("kicked", (reason) => {
