@@ -8,6 +8,7 @@ import { SkillApi } from "../skill-api.js";
 import { createMinecraftTools } from "../tools/index.js";
 import { AgentBrain } from "../agent.js";
 import { BotTelemetry } from "../telemetry.js";
+import { InMemoryMemory } from "../memory.js";
 import type {
   EpisodeTelemetry,
   Scenario,
@@ -59,13 +60,19 @@ export class EvalHarness {
 
     const skills = new SkillRuntime(join(this.cwd, "skills"), this.bot, this.chat);
     await skills.init();
-    const tools = createMinecraftTools({ bot: this.bot, chat: this.chat, skills });
+    // Non-persistent memory keeps scored episodes reproducible.
+    const memory = new InMemoryMemory();
+    const tools = createMinecraftTools({ bot: this.bot, chat: this.chat, skills, memory });
 
     this.brain = new AgentBrain({
-      config: this.config,
+      // Headless eval shares the live server; never broadcast thoughts there.
+      config: { ...this.config, narrate: false },
       chat: this.chat,
       customTools: tools,
       cwd: this.cwd,
+      memory,
+      // Stay reproducible: don't resume a live session.
+      resumeSession: false,
       onEvent: (e) => this.onSessionEvent(e),
     });
     await this.brain.start();

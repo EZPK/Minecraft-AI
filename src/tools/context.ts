@@ -2,12 +2,14 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Bot } from "../bot.js";
 import type { ChatRouter } from "../chat.js";
 import type { SkillRuntime } from "../skills-runtime.js";
+import type { Memory } from "../memory.js";
 
 /** Shared state every Minecraft tool needs. */
 export interface ToolContext {
   bot: Bot;
   chat: ChatRouter;
   skills: SkillRuntime;
+  memory: Memory;
 }
 
 export type ToolFactory = (ctx: ToolContext) => ToolDefinition[];

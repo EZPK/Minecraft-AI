@@ -2,6 +2,7 @@ import type { Bot } from "./bot.js";
 
 const MAX_CHAT_LEN = 200; // Minecraft caps around 256; stay safe.
 const SEND_INTERVAL_MS = 1100; // Avoid spam-kick.
+const NARRATE_MIN_INTERVAL_MS = 1500; // Throttle narration bursts (4s was too high — dropped most lines).
 
 export interface IncomingMessage {
   sender: string;
@@ -25,6 +26,8 @@ export class ChatRouter {
   private outQueue: QueueEntry[] = [];
   private timer: NodeJS.Timeout | undefined;
   private replyTarget: string | null = null;
+  private lastNarration = "";
+  private lastNarrationAt = 0;
 
   constructor(
     private readonly bot: Bot,
@@ -72,6 +75,27 @@ export class ChatRouter {
     this.flushSoon();
   }
 
+  /**
+   * Broadcast a short, viewer-facing line (a thought summary or an action
+   * play-by-play) to public chat, regardless of the current reply target.
+   * Throttled and de-duplicated so a burst doesn't flood the channel or get us
+   * spam-kicked.
+   */
+  narrate(text: string): void {
+    // Collapse to a single clean line and strip control chars/newlines — some
+    // servers silently drop chat that contains them.
+    const trimmed = stripControl(text).replace(/\s+/g, " ").trim();
+    if (!trimmed || trimmed === this.lastNarration) return;
+    const now = Date.now();
+    if (now - this.lastNarrationAt < NARRATE_MIN_INTERVAL_MS) return;
+    this.lastNarration = trimmed;
+    this.lastNarrationAt = now;
+    for (const chunk of chunkText(trimmed, MAX_CHAT_LEN)) {
+      this.outQueue.push({ text: chunk, target: null });
+    }
+    this.flushSoon();
+  }
+
   private flushSoon(): void {
     if (this.timer) return;
     const tick = () => {
@@ -91,6 +115,16 @@ export class ChatRouter {
     tick();
     this.timer = setInterval(tick, SEND_INTERVAL_MS);
   }
+}
+
+/** Remove ASCII control characters (0x00–0x1F and 0x7F) that can break chat. */
+function stripControl(text: string): string {
+  let out = "";
+  for (const ch of text) {
+    const code = ch.codePointAt(0)!;
+    out += code < 0x20 || code === 0x7f ? " " : ch;
+  }
+  return out;
 }
 
 function chunkText(text: string, max: number): string[] {

@@ -8,6 +8,7 @@ import { combatTools } from "./combat.js";
 import { communicationTools } from "./communication.js";
 import { skillTools } from "./skills.js";
 import { knowledgeTools } from "./knowledge.js";
+import { memoryTools } from "./memory.js";
 
 const FACTORIES: ToolFactory[] = [
   perceptionTools,
@@ -18,6 +19,7 @@ const FACTORIES: ToolFactory[] = [
   communicationTools,
   skillTools,
   knowledgeTools,
+  memoryTools,
 ];
 
 export function createMinecraftTools(ctx: ToolContext): ToolDefinition[] {

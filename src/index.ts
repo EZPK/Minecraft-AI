@@ -6,6 +6,7 @@ import { SkillRuntime } from "./skills-runtime.js";
 import { createMinecraftTools } from "./tools/index.js";
 import { AgentBrain } from "./agent.js";
 import { BotTelemetry } from "./telemetry.js";
+import { FileMemory } from "./memory.js";
 
 async function runSession(config: AppConfig, cwd: string): Promise<void> {
   console.log(
@@ -20,9 +21,10 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
   telemetry.start();
   const skills = new SkillRuntime(join(cwd, "skills"), bot, chat);
   await skills.init();
+  const memory = new FileMemory(cwd);
 
-  const tools = createMinecraftTools({ bot, chat, skills });
-  const brain = new AgentBrain({ config, chat, customTools: tools, cwd });
+  const tools = createMinecraftTools({ bot, chat, skills, memory });
+  const brain = new AgentBrain({ config, chat, customTools: tools, cwd, memory, resumeSession: true });
   await brain.start();
 
   chat.onPlayerMessage((msg) => {
@@ -40,7 +42,18 @@ async function runSession(config: AppConfig, cwd: string): Promise<void> {
       if (settled) return;
       settled = true;
       console.log(`[mindcraft-pi] ${label} — aborting brain…`);
-      void brain.abort().finally(resolve);
+      // Snapshot where we left off so the next session resumes with context,
+      // even if the agent never explicitly called `remember`.
+      const pos = bot.entity?.position;
+      void memory
+        .checkpoint({
+          objective: brain.lastObjective,
+          position: pos ? { x: pos.x, y: pos.y, z: pos.z } : undefined,
+          deaths: telemetry.counters.deaths,
+          pathFailures: telemetry.counters.pathFailures,
+        })
+        .catch((err) => console.error("[mindcraft-pi] checkpoint failed:", err))
+        .finally(() => void brain.abort().finally(resolve));
     };
     bot.on("error", (err) => console.error("[mindcraft-pi] bot error:", err));
     bot.on("kicked", (reason) => {

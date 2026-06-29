@@ -13,10 +13,16 @@ confirm what's on disk; the descriptions below explain *when* and *how* to use e
 | You need the result immediately in the same turn | The task loops or has error-recovery logic |
 | The action is simple enough to inline | The task is worth reusing later |
 
-> **Stuck on game knowledge?** If the `ask_minecraft_expert` tool is present, ask
-> it for recipes, the items/steps a goal needs, or survival tactics — then act
-> with your own tools and skills. (Only available when a local Minecraft model is
-> configured.)
+> **Ask the expert first.** If the `ask_minecraft_expert` tool is present, make it
+> your *first reflex* before any non-trivial goal or unfamiliar craft: ask it for
+> recipes, the items/steps a goal needs, the tech-tree order, or survival tactics
+> — *then* act with your own tools and skills. Don't guess recipes or
+> requirements; a quick question saves failed crafts and wasted actions. (Only
+> available when a local Minecraft model is configured.)
+>
+> **Remember across sessions.** You start amnesiac on every reconnect. Use
+> `remember` to save durable facts (base/home coords, chest & resource-site
+> locations, current objective, lessons learned) and `recall` to read them back.
 
 ---
 
@@ -143,7 +149,8 @@ Then eat manually: `bot.consume()` or ask the player if you should eat.
 
 ### Survey before starting any task
 
-Always call `scan_surroundings` when you've just spawned or been reconnected — it
+When you've just spawned or been reconnected: **`recall` your memory first** (to
+know your base, objective, and past lessons), then call `scan_surroundings` — it
 gives you inventory, health, and what's nearby in one go.
 
 ---

@@ -16,3 +16,6 @@ nmp-cache/
 
 # agent-authored skills are kept; runtime scratch is not
 skills/.cache/
+
+# cross-session memory store (runtime scratch)
+memory.json

@@ -31,6 +31,11 @@ export interface ModelConfig {
 export interface AppConfig {
   minecraft: MinecraftConfig;
   model: ModelConfig;
+  /**
+   * When true, the bot broadcasts a one-line summary of each chain-of-thought
+   * block to public chat, so stream viewers can follow what it's doing.
+   */
+  narrate: boolean;
 }
 
 function required(name: string): string {
@@ -74,5 +79,6 @@ export function loadConfig(): AppConfig {
       maxTokens: Number(optional("MODEL_MAX_TOKENS", "8192")),
       thinkingLevel: thinking,
     },
+    narrate: optional("BOT_NARRATE", "true") === "true",
   };
 }
