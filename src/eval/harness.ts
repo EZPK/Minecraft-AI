@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import type { AppConfig } from "../config.js";
 import { createBot, type Bot } from "../bot.js";
@@ -57,6 +58,16 @@ export class EvalHarness {
     this.skillApi = new SkillApi(this.bot, this.chat);
     this.telemetry = new BotTelemetry(this.bot);
     this.telemetry.start();
+
+    if (process.env.OVERLAY_PORT) {
+      const overlayUrl = pathToFileURL(join(this.cwd, "overlay_obs", "bot-overlay.mjs")).href;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      import(overlayUrl)
+        .then((m: any) => (m.startOverlay as (b: unknown, o: { port: number }) => void)(
+          this.bot, { port: Number(process.env.OVERLAY_PORT) }
+        ))
+        .catch((err: unknown) => console.error("[overlay] failed to start:", err));
+    }
 
     const skills = new SkillRuntime(join(this.cwd, "skills"), this.bot, this.chat);
     await skills.init();
